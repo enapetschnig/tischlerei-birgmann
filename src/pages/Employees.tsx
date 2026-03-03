@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, User, FileText, Clock, Mail, Phone, MapPin, FileSpreadsheet, Shirt } from "lucide-react";
 import { format } from "date-fns";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
@@ -50,7 +51,7 @@ export default function Employees() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState<Partial<Employee>>({});
-  const [newEmployee, setNewEmployee] = useState({ vorname: "", nachname: "", email: "" });
+  const [newEmployee, setNewEmployee] = useState({ vorname: "", nachname: "", email: "", wochenstunden: 40 });
   const [showSizesDialog, setShowSizesDialog] = useState(false);
 
   useEffect(() => {
@@ -102,6 +103,7 @@ export default function Employees() {
           vorname: newEmployee.vorname,
           nachname: newEmployee.nachname,
           email: newEmployee.email || null,
+          wochenstunden: newEmployee.wochenstunden,
         })
         .select()
         .single();
@@ -110,7 +112,7 @@ export default function Employees() {
 
       toast({ title: "Erfolg", description: "Mitarbeiter wurde angelegt" });
       setShowCreateDialog(false);
-      setNewEmployee({ vorname: "", nachname: "", email: "" });
+      setNewEmployee({ vorname: "", nachname: "", email: "", wochenstunden: 40 });
       fetchEmployees();
     } catch (error: any) {
       toast({ title: "Fehler", description: error.message, variant: "destructive" });
@@ -142,6 +144,18 @@ export default function Employees() {
       setFormData(selectedEmployee);
     }
   }, [selectedEmployee]);
+
+  const getWorkModelBadge = (wochenstunden: number | null) => {
+    const w = wochenstunden ?? 40;
+    const config: Record<number, { label: string; className: string }> = {
+      40: { label: "40 Std. Vollzeit", className: "bg-primary/15 text-primary border-primary/30" },
+      32: { label: "32 Std. Mi frei", className: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300" },
+      20: { label: "20 Std. Teilzeit", className: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300" },
+      10: { label: "10 Std. Geringfügig", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
+    };
+    const c = config[w] ?? config[40];
+    return <Badge variant="outline" className={`text-xs font-medium ${c.className}`}>{c.label}</Badge>;
+  };
 
   if (loading) {
     return (
@@ -180,36 +194,44 @@ export default function Employees() {
             className="cursor-pointer hover:shadow-lg transition-shadow"
             onClick={() => setSelectedEmployee(emp)}
           >
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Avatar>
-                  <AvatarFallback>
-                    {emp.vorname[0]}
-                    {emp.nachname[0]}
-                  </AvatarFallback>
-                </Avatar>
-                {emp.vorname} {emp.nachname}
-              </CardTitle>
-              <CardDescription>{emp.position || "Mitarbeiter"}</CardDescription>
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs">
+                      {emp.vorname[0]}{emp.nachname[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  {emp.vorname} {emp.nachname}
+                </CardTitle>
+                {getWorkModelBadge(emp.wochenstunden)}
+              </div>
+              <CardDescription className="mt-1">{emp.position || "Mitarbeiter"}</CardDescription>
             </CardHeader>
 
-            <CardContent>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-muted-foreground" />
-                  {emp.email || "Keine E-Mail"}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-muted-foreground" />
-                  {emp.telefon || "Keine Telefonnummer"}
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                  {emp.plz} {emp.ort || "Kein Ort"}
-                </div>
+            <CardContent className="pt-0">
+              <div className="space-y-1.5 text-sm">
+                {emp.email && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Mail className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{emp.email}</span>
+                  </div>
+                )}
+                {emp.telefon && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    {emp.telefon}
+                  </div>
+                )}
+                {emp.ort && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    {emp.plz} {emp.ort}
+                  </div>
+                )}
                 {emp.eintritt_datum && (
-                  <div className="text-muted-foreground mt-2">
-                    Seit: {format(new Date(emp.eintritt_datum), "dd.MM.yyyy")}
+                  <div className="text-muted-foreground text-xs pt-1">
+                    Seit {format(new Date(emp.eintritt_datum), "dd.MM.yyyy")}
                   </div>
                 )}
               </div>
@@ -328,20 +350,38 @@ export default function Employees() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Beschäftigung</h3>
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>SV-Nummer</Label>
-                        <Input
-                          value={formData.sv_nummer || ""}
-                          onChange={(e) => setFormData({ ...formData, sv_nummer: e.target.value })}
-                          placeholder="1234 010180"
-                        />
+                      {/* Arbeitszeitmodell ganz oben – wichtigste Einstellung */}
+                      <div className="col-span-2 p-3 rounded-lg border-2 border-primary/20 bg-primary/5">
+                        <Label className="text-sm font-semibold text-primary">Arbeitszeitmodell *</Label>
+                        <Select
+                          value={String(formData.wochenstunden ?? 40)}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                        >
+                          <SelectTrigger className="mt-1.5">
+                            <SelectValue placeholder="Wählen..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr, 06:30–15:30)</SelectItem>
+                            <SelectItem value="32">32 Std. – Teilzeit (Mo/Di/Do/Fr, Mi frei)</SelectItem>
+                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
+                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div>
                         <Label>Position</Label>
                         <Input
                           value={formData.position || ""}
                           onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                          placeholder="z.B. Zimmermann"
+                          placeholder="z.B. Tischler"
+                        />
+                      </div>
+                      <div>
+                        <Label>SV-Nummer</Label>
+                        <Input
+                          value={formData.sv_nummer || ""}
+                          onChange={(e) => setFormData({ ...formData, sv_nummer: e.target.value })}
+                          placeholder="1234 010180"
                         />
                       </div>
                       <div>
@@ -359,39 +399,6 @@ export default function Employees() {
                           value={formData.austritt_datum || ""}
                           onChange={(e) => setFormData({ ...formData, austritt_datum: e.target.value })}
                         />
-                      </div>
-                      <div>
-                        <Label>Beschäftigungsart</Label>
-                        <Select
-                          value={formData.beschaeftigung_art || ""}
-                          onValueChange={(v) => setFormData({ ...formData, beschaeftigung_art: v })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Wählen..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="vollzeit">Vollzeit</SelectItem>
-                            <SelectItem value="teilzeit">Teilzeit</SelectItem>
-                            <SelectItem value="geringfuegig">Geringfügig</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Arbeitszeitmodell</Label>
-                        <Select
-                          value={String(formData.wochenstunden ?? 40)}
-                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Wählen..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
-                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
-                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
-                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
-                          </SelectContent>
-                        </Select>
                       </div>
                       <div>
                         <Label>Stundenlohn (€)</Label>
@@ -551,21 +558,23 @@ export default function Employees() {
             <DialogTitle>Neuer Mitarbeiter</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateEmployee} className="space-y-4">
-            <div>
-              <Label>Vorname *</Label>
-              <Input
-                value={newEmployee.vorname}
-                onChange={(e) => setNewEmployee({ ...newEmployee, vorname: e.target.value })}
-                required
-              />
-            </div>
-            <div>
-              <Label>Nachname *</Label>
-              <Input
-                value={newEmployee.nachname}
-                onChange={(e) => setNewEmployee({ ...newEmployee, nachname: e.target.value })}
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Vorname *</Label>
+                <Input
+                  value={newEmployee.vorname}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, vorname: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Nachname *</Label>
+                <Input
+                  value={newEmployee.nachname}
+                  onChange={(e) => setNewEmployee({ ...newEmployee, nachname: e.target.value })}
+                  required
+                />
+              </div>
             </div>
             <div>
               <Label>E-Mail (optional)</Label>
@@ -574,6 +583,23 @@ export default function Employees() {
                 value={newEmployee.email}
                 onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
               />
+            </div>
+            <div className="p-3 rounded-lg border-2 border-primary/20 bg-primary/5">
+              <Label className="text-sm font-semibold text-primary">Arbeitszeitmodell *</Label>
+              <Select
+                value={String(newEmployee.wochenstunden)}
+                onValueChange={(v) => setNewEmployee({ ...newEmployee, wochenstunden: parseInt(v) })}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                  <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
+                  <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
+                  <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button type="submit" className="w-full">
               Mitarbeiter anlegen
