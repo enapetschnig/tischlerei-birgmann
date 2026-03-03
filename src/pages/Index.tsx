@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
+import NotificationBell from "@/components/NotificationBell";
 
 type Project = {
   id: string;
@@ -240,6 +241,8 @@ export default function Index() {
                 <span className="text-sm sm:text-base font-semibold">{userName || "Benutzer"}</span>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+            <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -268,6 +271,7 @@ export default function Index() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </div>
         </div>
       </header>

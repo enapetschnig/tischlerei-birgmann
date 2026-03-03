@@ -16,13 +16,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "sonner";
-import { 
-  getNormalWorkingHours, 
-  getDefaultWorkTimes, 
+import {
+  getNormalWorkingHours,
+  getDefaultWorkTimes,
   isNonWorkingDay,
   getWeeklyTargetHours,
   getTotalWorkingHours
 } from "@/lib/workingHours";
+import { notifyAdmins } from "@/lib/notifications";
 
 type Project = {
   id: string;
@@ -465,6 +466,22 @@ const TimeTracking = () => {
 
     if (!error) {
       toast({ title: "Erfolg", description: `${absenceLabel} erfasst` });
+
+      // Notify admins for vacation and sick leave
+      if (absenceData.type === "urlaub" || absenceData.type === "krankenstand") {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("vorname, nachname")
+          .eq("id", user.id)
+          .maybeSingle();
+        const name = profileData ? `${profileData.vorname} ${profileData.nachname}`.trim() : "Ein Mitarbeiter";
+        if (absenceData.type === "urlaub") {
+          notifyAdmins("leave_request", "Neuer Urlaubsantrag", `${name} hat am ${absenceData.date} Urlaub eingetragen.`);
+        } else {
+          notifyAdmins("krankmeldung", "Neue Krankmeldung", `${name} hat am ${absenceData.date} Krankenstand eingetragen.`);
+        }
+      }
+
       setShowAbsenceDialog(false);
       setAbsenceData({
         date: new Date().toISOString().split('T')[0],

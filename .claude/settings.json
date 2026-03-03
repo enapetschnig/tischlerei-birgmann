@@ -1,0 +1,14 @@
+{
+  "allowedTools": [
+    "Bash(git add*)",
+    "Bash(git commit*)",
+    "Bash(git push*)",
+    "Bash(git status*)",
+    "Bash(git log*)",
+    "Bash(git diff*)",
+    "Bash(npm run build*)",
+    "Bash(npm install*)",
+    "Bash(npx vercel*)",
+    "Bash(rm -f *.lock*)"
+  ]
+}

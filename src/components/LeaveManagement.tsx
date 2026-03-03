@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { notifyUser } from "@/lib/notifications";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +122,16 @@ export default function LeaveManagement({ profiles }: LeaveManagementProps) {
         });
       }
     }
+
+    // Notify the employee about the decision
+    const statusText = newStatus === "genehmigt" ? "genehmigt" : "abgelehnt";
+    notifyUser(
+      request.user_id,
+      `leave_${newStatus}`,
+      `Urlaubsantrag ${statusText}`,
+      `Ihr Urlaubsantrag (${request.start_date} – ${request.end_date}, ${request.days} ${request.days === 1 ? "Tag" : "Tage"}) wurde ${statusText}.`,
+      requestId
+    );
 
     toast({
       title: newStatus === "genehmigt" ? "Genehmigt" : "Abgelehnt",

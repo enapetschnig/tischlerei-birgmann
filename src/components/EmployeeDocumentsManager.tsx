@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { notifyAdmins, notifyUser } from "@/lib/notifications";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -110,6 +111,19 @@ export default function EmployeeDocumentsManager({ employeeId, userId }: Props) 
       await Promise.all(uploadPromises);
 
       toast({ title: "Erfolg", description: `${files.length} Dokument(e) hochgeladen` });
+
+      // Send notifications
+      const targetId = userId || employeeId;
+      if (type === "lohnzettel" && isAdmin && targetId) {
+        // Admin uploaded pay slip → notify the employee
+        notifyUser(targetId, "lohnzettel", "Neuer Lohnzettel verfügbar", "Ein neuer Lohnzettel wurde hochgeladen und steht in Ihren Dokumenten bereit.");
+      } else if (type === "krankmeldung" && !isAdmin && targetId) {
+        // Employee uploaded sick note → notify admins
+        const { data: profileData } = await supabase.from("profiles").select("vorname, nachname").eq("id", targetId).maybeSingle();
+        const name = profileData ? `${profileData.vorname} ${profileData.nachname}`.trim() : "Ein Mitarbeiter";
+        notifyAdmins("krankmeldung", "Neue Krankmeldung hochgeladen", `${name} hat eine Krankmeldung hochgeladen.`);
+      }
+
       fetchDocuments();
     } catch (error: any) {
       toast({ title: "Fehler", description: error.message, variant: "destructive" });
