@@ -92,9 +92,9 @@ const TimeTracking = () => {
     document: null as File | null,
     customHours: "" as string,
     isFullDay: true,
-    absenceStartTime: "07:00",
-    absenceEndTime: "16:00",
-    absencePauseMinutes: "30",
+    absenceStartTime: "06:30",
+    absenceEndTime: "15:30",
+    absencePauseMinutes: "60",
   });
   
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -387,9 +387,9 @@ const TimeTracking = () => {
 
     if (absenceData.isFullDay) {
       workingHours = absenceData.customHours ? parseFloat(absenceData.customHours) : automaticHours;
-      entryStartTime = defaultTimes?.startTime || "07:00";
-      entryEndTime = defaultTimes?.endTime || "16:00";
-      entryPauseMinutes = defaultTimes?.pauseMinutes || 30;
+      entryStartTime = defaultTimes?.startTime || "06:30";
+      entryEndTime = defaultTimes?.endTime || "15:30";
+      entryPauseMinutes = defaultTimes?.pauseMinutes || 60;
     } else {
       // Calculate from Von/Bis
       const [sH, sM] = absenceData.absenceStartTime.split(':').map(Number);
@@ -710,10 +710,10 @@ const TimeTracking = () => {
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {getWeeklyTargetHours()}h Wochensoll
+                    {getWeeklyTargetHours(40)}h Wochensoll
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    Mo-Do: 8,5h • Fr: 5h (inkl. 0,5h Überstunde/ZA)
+                    Mo–Fr: 8h netto • 06:30–15:30 (1h Mittagspause)
                   </span>
                 </div>
               </div>
@@ -1096,9 +1096,9 @@ const TimeTracking = () => {
                     setAbsenceData({
                       ...absenceData,
                       isFullDay: checked,
-                      absenceStartTime: defaults?.startTime || "07:00",
-                      absenceEndTime: defaults?.endTime || "16:00",
-                      absencePauseMinutes: String(defaults?.pauseMinutes ?? 30),
+                      absenceStartTime: defaults?.startTime || "06:30",
+                      absenceEndTime: defaults?.endTime || "15:30",
+                      absencePauseMinutes: String(defaults?.pauseMinutes ?? 60),
                     });
                   }}
                 />
@@ -1118,8 +1118,7 @@ const TimeTracking = () => {
                       const absenceDateObj = new Date(absenceData.date);
                       const dayOfWeek = absenceDateObj.getDay();
                       if (dayOfWeek === 0 || dayOfWeek === 6) return "Wochenende: 0 Stunden";
-                      if (dayOfWeek === 5) return "Freitag: 4,5 Stunden (07:00 - 12:00)";
-                      return "Mo-Do: 8,5 Stunden (07:00 - 16:00, 30min Pause)";
+                      return "Mo–Fr: 8 Stunden (06:30 – 15:30, 1h Mittagspause)";
                     })()}
                   </div>
                   <div className="pt-2 border-t">

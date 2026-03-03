@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNormalWorkingHours } from "@/lib/workingHours";
+import { getNormalWorkingHours, getWorkModelLabel } from "@/lib/workingHours";
 
 interface TimeEntry {
   id: string;
@@ -68,6 +68,7 @@ export default function HoursReport() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [companySettings, setCompanySettings] = useState({ name: "", address: "", email: "" });
+  const [employeeWochenstunden, setEmployeeWochenstunden] = useState<number>(40);
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 
@@ -89,8 +90,22 @@ export default function HoursReport() {
   useEffect(() => {
     if (selectedUserId) {
       fetchTimeEntries();
+      fetchEmployeeWochenstunden();
     }
   }, [month, year, selectedUserId]);
+
+  const fetchEmployeeWochenstunden = async () => {
+    const { data } = await supabase
+      .from("employees")
+      .select("wochenstunden")
+      .eq("user_id", selectedUserId)
+      .maybeSingle();
+    if (data?.wochenstunden) {
+      setEmployeeWochenstunden(data.wochenstunden);
+    } else {
+      setEmployeeWochenstunden(40);
+    }
+  };
 
   const checkAdminStatus = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -181,7 +196,7 @@ export default function HoursReport() {
   };
 
   const calculateOvertime = (date: Date, totalHours: number): number => {
-    const normalHours = getNormalWorkingHours(date);
+    const normalHours = getNormalWorkingHours(date, employeeWochenstunden);
     return Math.max(0, totalHours - normalHours);
   };
 
@@ -246,6 +261,7 @@ export default function HoursReport() {
       [`E-Mail: ${companySettings.email}`, "", "", "", "", "", "", "", "", "", "", ""],
       ["", "", "", "", "", "", "", "", "", "", "", ""],
       ["Dienstnehmer:", "", employeeName, "", "", "", "", "", "Monat:", `${monthNamesShort[month - 1]}-${year.toString().slice(-2)}`, "", ""],
+      ["Arbeitszeitmodell:", "", getWorkModelLabel(employeeWochenstunden), "", "", "", "", "", "", "", "", ""],
       ["", "", "", "", "", "", "", "", "", "", "", ""],
     ];
 
@@ -336,16 +352,15 @@ export default function HoursReport() {
           } else {
             // Export OHNE Überstunden: Regelarbeitszeiten verwenden
             const dayOfWeek = dayDate.getDay();
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isFridayCheck = dayOfWeek === 5;
-            const regelarbeitszeit = isWeekend ? 0 : (isFridayCheck ? 5 : 8.5);
-            
-            // Regelarbeitszeiten für Zeiten
-            const regelStart = "07:30";
-            const regelMorningEnd = isFridayCheck ? "12:30" : "12:00";
-            const regelPause = isFridayCheck ? "" : "12:00 - 13:00";
-            const regelAfternoonStart = isFridayCheck ? "" : "13:00";
-            const regelEnd = isFridayCheck ? "12:30" : "17:00";
+            const isWorkday = getNormalWorkingHours(dayDate, employeeWochenstunden) > 0;
+            const regelarbeitszeit = getNormalWorkingHours(dayDate, employeeWochenstunden);
+
+            // Birgmann Regelarbeitszeiten
+            const regelStart = isWorkday ? "06:30" : "";
+            const regelMorningEnd = isWorkday ? "12:00" : "";
+            const regelPause = isWorkday ? "12:00 - 13:00" : "";
+            const regelAfternoonStart = isWorkday ? "13:00" : "";
+            const regelEnd = isWorkday ? "15:30" : "";
             
             worksheetData.push([
               displayDay,
@@ -372,12 +387,8 @@ export default function HoursReport() {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalOvertime > 0 ? dayTotalOvertime.toFixed(2) : "", "", "", "", ""]);
           } else {
             // Tagessumme mit Regelarbeitszeit
-            const dayOfWeek = dayDate.getDay();
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isFridayCheck = dayOfWeek === 5;
-            const regelarbeitszeitTag = isWeekend ? 0 : (isFridayCheck ? 5 : 8.5);
-            // Bei mehreren Einträgen pro Tag: Regelarbeitszeit * Anzahl Einträge oder einfach die Tagessumme der Regelarbeitszeit
-            worksheetData.push(["", "", "", "", "", "Tagessumme:", (regelarbeitszeitTag * dayEntries.length).toFixed(2), "", "", "", "", ""]);
+            const regelarbeitszeitTag = getNormalWorkingHours(dayDate, employeeWochenstunden);
+            worksheetData.push(["", "", "", "", "", "Tagessumme:", regelarbeitszeitTag.toFixed(2), "", "", "", "", ""]);
           }
         }
       }
@@ -390,11 +401,7 @@ export default function HoursReport() {
         const dayDate = new Date(year, month - 1, day);
         const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), dayDate));
         if (dayEntries.length > 0) {
-          const dayOfWeek = dayDate.getDay();
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          const isFridayCheck = dayOfWeek === 5;
-          const regelarbeitszeit = isWeekend ? 0 : (isFridayCheck ? 5 : 8.5);
-          summe += regelarbeitszeit * dayEntries.length;
+          summe += getNormalWorkingHours(dayDate, employeeWochenstunden);
         }
       }
       return summe;
@@ -731,7 +738,7 @@ export default function HoursReport() {
                                     <div className="flex items-center gap-1">
                                       <span>{entry.start_time?.substring(0, 5)}</span>
                                       <span>-</span>
-                                      <span>{day.isFriday ? "12:30" : "12:00"}</span>
+                                      <span>{"12:00"}</span>
                                     </div>
                                   </TableCell>
                                   <TableCell>

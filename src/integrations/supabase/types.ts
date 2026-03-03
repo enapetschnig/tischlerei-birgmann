@@ -277,6 +277,7 @@ export type Database = {
           updated_at: string | null
           user_id: string | null
           vorname: string
+          wochenstunden: number
         }
         Insert: {
           adresse?: string | null
@@ -304,6 +305,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           vorname: string
+          wochenstunden?: number
         }
         Update: {
           adresse?: string | null
@@ -331,6 +333,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string | null
           vorname?: string
+          wochenstunden?: number
         }
         Relationships: []
       }

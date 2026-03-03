@@ -393,7 +393,7 @@ const MyHours = () => {
                     <Input
                       id="edit-morning-start"
                       type="time"
-                      value={editingEntry.start_time || '07:30'}
+                      value={editingEntry.start_time || '06:30'}
                       onChange={(e) => setEditingEntry({...editingEntry, start_time: e.target.value})}
                     />
                   </div>
@@ -459,7 +459,7 @@ const MyHours = () => {
                 </div>
                 {new Date(editingEntry.datum).getDay() === 5 && (
                   <p className="text-xs text-muted-foreground">
-                    Freitags ist die Normalarbeitszeit 7:30-12:30 Uhr. Nachmittag nur bei Überstunden.
+                    Regelarbeitszeit: 06:30–15:30 Uhr (1h Mittagspause). Abweichende Zeiten bei Überstunden.
                   </p>
                 )}
               </div>

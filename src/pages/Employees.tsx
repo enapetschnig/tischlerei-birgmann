@@ -33,6 +33,7 @@ interface Employee {
   austritt_datum: string | null;
   position: string | null;
   beschaeftigung_art: string | null;
+  wochenstunden: number | null;
   stundenlohn: number | null;
   iban: string | null;
   bic: string | null;
@@ -372,6 +373,23 @@ export default function Employees() {
                             <SelectItem value="vollzeit">Vollzeit</SelectItem>
                             <SelectItem value="teilzeit">Teilzeit</SelectItem>
                             <SelectItem value="geringfuegig">Geringfügig</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Arbeitszeitmodell</Label>
+                        <Select
+                          value={String(formData.wochenstunden ?? 40)}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Wählen..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
+                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
+                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
