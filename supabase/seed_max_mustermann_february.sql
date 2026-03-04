@@ -1,42 +1,80 @@
--- Stundeneintraege fuer Max Mustermann im Februar 2026
--- UUID: f4556eed-6e68-4840-b1f2-e773f792680f
--- 40h/Woche = 8h/Tag, Mo-Fr, keine Feiertage im Feb
+-- Seed: Regelarbeitszeiten für Max Mustermann - Februar 2026
+-- 40h-Modell: Mo-Fr, 8h pro Tag, 06:30-15:30, Pause 12:00-13:00
+-- Dieses Script im Supabase SQL Editor ausführen
 
+-- Zuerst Max Mustermann's user_id finden
+-- (anpassen falls der Name anders ist)
 DO $$
 DECLARE
-  v_user_id UUID := 'f4556eed-6e68-4840-b1f2-e773f792680f';
+  v_user_id UUID;
   v_project_id UUID;
+  v_date DATE;
+  v_day_of_week INT;
 BEGIN
-  SELECT id INTO v_project_id FROM projects WHERE status = 'aktiv' LIMIT 1;
-  IF v_project_id IS NULL THEN
-    RAISE NOTICE 'Kein aktives Projekt gefunden!';
-    RETURN;
+  -- Max Mustermann finden
+  SELECT id INTO v_user_id FROM profiles 
+  WHERE vorname = 'Max' AND nachname = 'Mustermann' 
+  LIMIT 1;
+
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Max Mustermann nicht gefunden! Bitte prüfen.';
   END IF;
 
-  DELETE FROM time_entries
-  WHERE user_id = v_user_id AND datum >= '2026-02-01' AND datum <= '2026-02-28';
+  -- Erstes aktives Projekt nehmen
+  SELECT id INTO v_project_id FROM projects 
+  WHERE status = 'aktiv' 
+  ORDER BY name LIMIT 1;
 
-  INSERT INTO time_entries (user_id, datum, start_time, end_time, stunden, pause_minutes, project_id, taetigkeit, location_type) VALUES
-  (v_user_id, '2026-02-02', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-03', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-04', '07:00', '16:00', 8, 60, v_project_id, 'Werkstatt', 'werkstatt'),
-  (v_user_id, '2026-02-05', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-06', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-09', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-10', '07:00', '16:00', 8, 60, v_project_id, 'Werkstatt', 'werkstatt'),
-  (v_user_id, '2026-02-11', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-12', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-13', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-16', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-17', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-18', '07:00', '16:00', 8, 60, v_project_id, 'Werkstatt', 'werkstatt'),
-  (v_user_id, '2026-02-19', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-20', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-23', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-24', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-25', '07:00', '16:00', 8, 60, v_project_id, 'Werkstatt', 'werkstatt'),
-  (v_user_id, '2026-02-26', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle'),
-  (v_user_id, '2026-02-27', '07:00', '16:00', 8, 60, v_project_id, 'Montage', 'baustelle');
+  IF v_project_id IS NULL THEN
+    RAISE EXCEPTION 'Kein aktives Projekt gefunden!';
+  END IF;
 
-  RAISE NOTICE '20 Arbeitstage fuer Max Mustermann im Februar 2026 eingetragen (Projekt: %)', v_project_id;
+  -- Bestehende Einträge für Februar löschen (falls vorhanden)
+  DELETE FROM time_entries 
+  WHERE user_id = v_user_id 
+    AND datum >= '2026-02-01' 
+    AND datum <= '2026-02-28';
+
+  -- Jeden Arbeitstag im Februar 2026 einfügen
+  FOR v_date IN SELECT generate_series('2026-02-01'::date, '2026-02-28'::date, '1 day')::date LOOP
+    v_day_of_week := EXTRACT(DOW FROM v_date);
+    
+    -- Nur Montag (1) bis Freitag (5)
+    IF v_day_of_week BETWEEN 1 AND 5 THEN
+      INSERT INTO time_entries (
+        user_id, 
+        project_id, 
+        datum, 
+        start_time, 
+        end_time, 
+        pause_start, 
+        pause_end, 
+        stunden, 
+        taetigkeit, 
+        ort, 
+        notizen
+      ) VALUES (
+        v_user_id,
+        v_project_id,
+        v_date,
+        '06:30',
+        '15:30',
+        '12:00',
+        '13:00',
+        8.0,
+        'Tischlerarbeiten',
+        'Werkstatt',
+        'Regelarbeitszeit'
+      );
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE 'Fertig! Regelarbeitszeiten für Max Mustermann Februar 2026 eingetragen.';
 END $$;
+
+-- Ergebnis prüfen:
+-- SELECT datum, start_time, end_time, stunden, taetigkeit 
+-- FROM time_entries 
+-- WHERE user_id = (SELECT id FROM profiles WHERE vorname='Max' AND nachname='Mustermann')
+--   AND datum >= '2026-02-01' AND datum <= '2026-02-28'
+-- ORDER BY datum;
