@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
     // Verify user
     const token = authHeader.replace("Bearer ", "");
     const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
-
+    
     if (claimsError || !claimsData?.claims) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized" }),
@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
 
       const activeIds = new Set(profiles?.filter(p => p.is_active).map(p => p.id) || []);
       const invalidIds = teamUserIds.filter(id => !activeIds.has(id));
-
+      
       if (invalidIds.length > 0) {
         return new Response(
           JSON.stringify({ success: false, error: `Invalid or inactive team members: ${invalidIds.length}` }),

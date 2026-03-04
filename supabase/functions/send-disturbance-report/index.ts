@@ -108,7 +108,7 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
   // Try loading logo from public URL
   let logoLoaded = false;
   try {
-    const logoResponse = await fetch("https://testepower.lovable.app/epower-logo.png");
+    const logoResponse = await fetch("https://www.birgmann.app/birgmann-logo.png");
     if (logoResponse.ok) {
       const logoBuffer = await logoResponse.arrayBuffer();
       const logoUint8 = new Uint8Array(logoBuffer);
@@ -128,19 +128,19 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
   if (logoLoaded) {
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(61, 155, 61);
-    doc.text("EPOWER GMBH", margin + 45, yPos + 10);
+    doc.setTextColor(140, 56, 16);
+    doc.text("TISCHLEREI BIRGMANN", margin + 45, yPos + 10);
     yPos += 20;
   } else {
     doc.setFontSize(24);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(61, 155, 61);
-    doc.text("EPOWER GMBH", margin, yPos);
+    doc.setTextColor(140, 56, 16);
+    doc.text("TISCHLEREI BIRGMANN", margin, yPos);
     yPos += 8;
   }
 
   // Divider line
-  doc.setDrawColor(61, 155, 61);
+  doc.setDrawColor(140, 56, 16);
   doc.setLineWidth(0.5);
   doc.line(margin, yPos, margin + contentWidth, yPos);
   yPos += 5;
@@ -382,7 +382,7 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
   const footerY = doc.internal.pageSize.getHeight() - 15;
-  doc.text(`Erstellt am: ${new Date().toLocaleDateString("de-AT")} | ePower GmbH`, margin, footerY);
+  doc.text(`Erstellt am: ${new Date().toLocaleDateString("de-AT")} | Tischlerei Birgmann`, margin, footerY);
 
   // Return as base64
   return doc.output("datauristring").split(",")[1];
@@ -399,14 +399,14 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
       <meta charset="utf-8">
       <style>
         body { font-family: Arial, sans-serif; color: #333; line-height: 1.5; }
-        .header { color: #3D9B3D; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .header { color: #8C3810; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
         .info-box { background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0; }
       </style>
     </head>
     <body>
       <div class="container">
-        <div class="header">EPOWER GMBH</div>
+        <div class="header">TISCHLEREI BIRGMANN</div>
         <h2>Regiebericht</h2>
 
         <p>Sehr geehrte Damen und Herren,</p>
@@ -423,7 +423,7 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
         <p>Der vollständige Bericht mit allen Details und der Kundenunterschrift befindet sich im angehängten PDF-Dokument.</p>
 
         <p>Mit freundlichen Grüßen,<br>
-        ePower GmbH</p>
+        Tischlerei Birgmann</p>
       </div>
     </body>
     </html>
@@ -476,14 +476,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq("key", "disturbance_report_email")
       .maybeSingle();
 
-    const officeEmail = setting?.value || "hallo@epowergmbh.at";
+    const officeEmail = setting?.value || "";
     console.log("Using office email:", officeEmail);
 
-    // Prepare recipients - office email for all reports
-    const recipients = [officeEmail];
-    if (disturbance.kunde_email) {
-      recipients.push(disturbance.kunde_email);
-    }
+    // Prepare recipients
+    const recipients: string[] = [];
+    if (officeEmail) recipients.push(officeEmail);
+    if (disturbance.kunde_email) recipients.push(disturbance.kunde_email);
 
     // Create filename
     const dateForFilename = formatDateShort(disturbance.datum).replace(/\./g, "-");
@@ -494,7 +493,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     console.log("Sending email with PDF attachment to:", recipients);
 
-    // Send email via Resend REST API (no SDK import needed - avoids module-level crash)
+    // Send email via Resend REST API (no SDK import needed - avoids module-level crash in Deno)
     const apiKey = Deno.env.get("RESEND_API_KEY")!;
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -503,7 +502,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "ePower GmbH <noreply@chrisnapetschnig.at>",
+        from: "Tischlerei Birgmann <noreply@chrisnapetschnig.at>",
         to: recipients,
         subject: subject,
         html: emailHtml,

@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       .list('', { limit: 1000 })
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message }), {
+      return new Response(JSON.stringify({ error: error.message }), { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -86,8 +86,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({
-      success: true,
+    return new Response(JSON.stringify({ 
+      success: true, 
       migrated: results,
       errors: errors,
       summary: `${results.length} Dateien verschoben, ${errors.length} Fehler`
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), {
+    return new Response(JSON.stringify({ error: String(e) }), { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

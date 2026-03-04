@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     // Get the authenticated user
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
+    
     if (userError || !user) {
       console.error('Authentication error:', userError);
       throw new Error('Unauthorized');
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     // Generate registration link
     const appUrl = 'https://elektro-brodnig.app';
     const registrationLink = `${appUrl}/auth`;
-
+    
     // Compose SMS message
     const smsText = `Willkommen bei Elektro Brodnig! Bitte registriere dich in unserer Mitarbeiter-App:\n${registrationLink}`;
 
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
     });
 
     const twilioData = await twilioResponse.json();
-
+    
     if (!twilioResponse.ok) {
       console.error('Twilio error response:', twilioData);
       throw new Error(`SMS-Versand fehlgeschlagen: ${JSON.stringify(twilioData)}`);
@@ -130,9 +130,9 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Error in send-invitation function:', error);
-
+    
     const errorMessage = error instanceof Error ? error.message : 'Ein Fehler ist aufgetreten';
-
+    
     return new Response(
       JSON.stringify({
         success: false,

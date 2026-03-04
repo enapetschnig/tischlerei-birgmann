@@ -69,7 +69,7 @@ serve(async (req) => {
   @page { size: A4; margin: 20mm; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; color: #1a1a1a; margin: 0; padding: 0; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
-  .company { font-size: 14pt; font-weight: 700; color: #0066cc; }
+  .company { font-size: 14pt; font-weight: 700; color: #8C3810; }
   .company-details { font-size: 8pt; color: #666; margin-top: 4px; }
   .doc-type { font-size: 20pt; font-weight: 700; color: #333; text-align: right; }
   .doc-number { font-size: 11pt; color: #666; text-align: right; }
@@ -90,10 +90,9 @@ serve(async (req) => {
 
 <div class="header">
   <div>
-    <div class="company">ePower GmbH</div>
+    <div class="company">Tischlerei Birgmann</div>
     <div class="company-details">
-      Elektrotechnik & Photovoltaik<br>
-      hallo@epowergmbh.at
+      Tischlerei & Innenausbau
     </div>
   </div>
   <div>
@@ -143,12 +142,16 @@ serve(async (req) => {
 ${invoice.notizen ? `<div class="notes"><strong>Anmerkung:</strong> ${invoice.notizen}</div>` : ''}
 
 <div class="footer">
-  ePower GmbH | hallo@epowergmbh.at
+  Tischlerei Birgmann
 </div>
 
 </body></html>`;
 
-    // Return HTML that the client can print as PDF
+    // Use jsPDF alternative: convert HTML to PDF via a simple approach
+    // Since Deno doesn't have puppeteer, we'll return the HTML and let the client render it
+    // Actually, let's use a lightweight approach: encode the HTML as a data URI and return it
+    
+    // For now, return HTML that the client can print as PDF
     const base64Html = btoa(unescape(encodeURIComponent(html)));
 
     return new Response(JSON.stringify({ pdf: base64Html, format: "html" }), {
