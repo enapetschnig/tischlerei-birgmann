@@ -88,6 +88,35 @@ export default function MyDocuments() {
     } else {
       toast({ title: "Erfolg", description: "Dokument hochgeladen" });
       await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes);
+
+      // Notify admins when a sick note is uploaded
+      if (type === "krankmeldung") {
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("vorname, nachname")
+            .eq("id", userId)
+            .single();
+
+          const { data: admins } = await supabase
+            .from("user_roles")
+            .select("user_id")
+            .eq("role", "administrator");
+
+          if (admins && profile) {
+            const notifications = admins.map((admin) => ({
+              user_id: admin.user_id,
+              title: "Neue Krankmeldung",
+              message: `${profile.vorname} ${profile.nachname} hat eine Krankmeldung hochgeladen.`,
+              type: "sick_note" as const,
+            }));
+
+            await supabase.from("in_app_notifications").insert(notifications);
+          }
+        } catch (notifError) {
+          console.error("Notification error:", notifError);
+        }
+      }
     }
 
     setUploading(false);

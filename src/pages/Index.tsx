@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, Receipt } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, Receipt, CalendarDays } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -411,10 +411,31 @@ export default function Index() {
             </Card>
           )}
 
+          {/* Admin: Disponierung */}
+          {isAdmin && (
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
+              onClick={() => navigate("/resource-planning")}
+            >
+              <CardHeader className="space-y-2 pb-3">
+                <div className="h-12 w-12 rounded-lg bg-accent/10 flex items-center justify-center">
+                  <CalendarDays className="h-6 w-6 text-accent" />
+                </div>
+                <CardTitle className="text-lg sm:text-xl">Disponierung</CardTitle>
+                <CardDescription className="text-sm">
+                  Mitarbeiter, Fahrzeuge & Projekte einteilen
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full" size="sm" variant="outline">Disponieren</Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Admin: Mitarbeiter */}
           {isAdmin && (
-            <Card 
-              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50" 
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:border-primary/50"
               onClick={() => navigate("/admin")}
             >
               <CardHeader className="space-y-2 pb-3">

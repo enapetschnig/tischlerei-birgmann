@@ -25,6 +25,7 @@ import Notepad from "./pages/Notepad";
 import MaterialList from "./pages/MaterialList";
 import Disturbances from "./pages/Disturbances";
 import DisturbanceDetail from "./pages/DisturbanceDetail";
+import ResourcePlanning from "./pages/ResourcePlanning";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -64,6 +65,7 @@ function AppContent() {
         <Route path="/hours-report" element={<HoursReport />} />
         <Route path="/employees" element={<Employees />} />
         <Route path="/notepad" element={<Notepad />} />
+        <Route path="/resource-planning" element={<ResourcePlanning />} />
         <Route path="/disturbances" element={<Disturbances />} />
         <Route path="/disturbances/:id" element={<DisturbanceDetail />} />
         <Route path="*" element={<NotFound />} />

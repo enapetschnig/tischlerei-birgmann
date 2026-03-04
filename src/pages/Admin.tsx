@@ -276,7 +276,8 @@ export default function Admin() {
   };
 
   const fetchSickNotes = async () => {
-    const { data: timeEntriesData, error } = await supabase
+    // 1. Fetch sick notes from time_entries (uploaded via TimeTracking absence entry)
+    const { data: timeEntriesData } = await supabase
       .from("time_entries")
       .select("id, datum, user_id, notizen")
       .eq("taetigkeit", "Krankenstand")
@@ -285,43 +286,58 @@ export default function Admin() {
       .order("datum", { ascending: false })
       .limit(20);
 
-    if (error) {
-      console.error("Error fetching sick notes:", error);
-      return;
-    }
-
-    if (!timeEntriesData || timeEntriesData.length === 0) {
-      setSickNotes([]);
-      return;
-    }
-
-    // Get unique user IDs
-    const userIds = [...new Set(timeEntriesData.map(entry => entry.user_id))];
-    
-    // Fetch profiles for these users
-    const { data: profilesData } = await supabase
+    // 2. Also check storage for documents uploaded via MyDocuments
+    const { data: allProfiles } = await supabase
       .from("profiles")
       .select("id, vorname, nachname")
-      .in("id", userIds);
+      .eq("is_active", true);
 
-    if (!profilesData) {
-      setSickNotes([]);
-      return;
+    const storageNotes: SickNote[] = [];
+    if (allProfiles) {
+      for (const profile of allProfiles) {
+        const { data: files } = await supabase.storage
+          .from("employee-documents")
+          .list(`${profile.id}/krankmeldung`, { limit: 5, sortBy: { column: "created_at", order: "desc" } });
+
+        if (files && files.length > 0) {
+          for (const file of files) {
+            if (file.name === ".emptyFolderPlaceholder") continue;
+            storageNotes.push({
+              id: `storage-${profile.id}-${file.name}`,
+              datum: file.created_at || new Date().toISOString(),
+              user_id: profile.id,
+              notizen: `${profile.id}/krankmeldung/${file.name}`,
+              profiles: { vorname: profile.vorname, nachname: profile.nachname },
+            });
+          }
+        }
+      }
     }
 
-    // Map profiles to time entries
-    const profilesMap = new Map(profilesData.map(p => [p.id, p]));
-    const sickNotesWithProfiles = timeEntriesData
-      .filter(entry => profilesMap.has(entry.user_id))
-      .map(entry => ({
-        ...entry,
-        profiles: {
-          vorname: profilesMap.get(entry.user_id)!.vorname,
-          nachname: profilesMap.get(entry.user_id)!.nachname,
-        }
-      }));
+    // 3. Merge time_entry notes with storage notes (deduplicate by file path)
+    const allNotes: SickNote[] = [...storageNotes];
 
-    setSickNotes(sickNotesWithProfiles);
+    if (timeEntriesData && allProfiles) {
+      const profilesMap = new Map(allProfiles.map(p => [p.id, p]));
+      const storagePaths = new Set(storageNotes.map(n => n.notizen));
+
+      for (const entry of timeEntriesData) {
+        const profile = profilesMap.get(entry.user_id);
+        if (!profile) continue;
+
+        const docPath = entry.notizen?.replace("Krankmeldung: ", "").trim();
+        if (docPath && storagePaths.has(docPath)) continue; // Already in storage list
+
+        allNotes.push({
+          ...entry,
+          profiles: { vorname: profile.vorname, nachname: profile.nachname },
+        });
+      }
+    }
+
+    // Sort by date descending
+    allNotes.sort((a, b) => new Date(b.datum).getTime() - new Date(a.datum).getTime());
+    setSickNotes(allNotes.slice(0, 20));
   };
 
   const handleDeleteSickNote = async (noteId: string, documentPath: string | null) => {
@@ -348,13 +364,15 @@ export default function Admin() {
         }
       }
 
-      // Delete the time entry
-      const { error: dbError } = await supabase
-        .from("time_entries")
-        .delete()
-        .eq("id", noteId);
+      // Only delete from time_entries if it's not a storage-only note
+      if (!noteId.startsWith("storage-")) {
+        const { error: dbError } = await supabase
+          .from("time_entries")
+          .delete()
+          .eq("id", noteId);
 
-      if (dbError) throw dbError;
+        if (dbError) throw dbError;
+      }
 
       toast({
         title: "Gelöscht",
@@ -603,7 +621,7 @@ export default function Admin() {
               <CardContent>
                 <div className="space-y-3">
                   {profiles.filter(p => !p.is_active).map((profile) => (
-                    <div key={profile.id} className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                    <div key={profile.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-card">
                       <div className="flex items-center gap-3">
                         <Avatar>
                           <AvatarFallback className="bg-destructive/10 text-destructive">
@@ -620,7 +638,7 @@ export default function Admin() {
                           </p>
                         </div>
                       </div>
-                      <Button onClick={() => handleActivateUser(profile.id, true)}>
+                      <Button className="w-full sm:w-auto" onClick={() => handleActivateUser(profile.id, true)}>
                         Aktivieren
                       </Button>
                     </div>
@@ -738,12 +756,12 @@ export default function Admin() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <div className="flex flex-col gap-2 w-full sm:w-auto">
                       <Select
                         value={userRoles[profile.id]}
                         onValueChange={(val) => handleRoleChange(profile.id, val as "administrator" | "mitarbeiter")}
                       >
-                        <SelectTrigger className="w-full sm:w-[200px]">
+                        <SelectTrigger className="w-full sm:w-[180px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -752,16 +770,17 @@ export default function Admin() {
                         </SelectContent>
                       </Select>
 
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-3 sm:flex gap-2">
                         <Button
                           variant="outline"
+                          size="sm"
                           onClick={() => openEmployeeEditorForUser(profile.id, 'stammdaten')}
                         >
                           Bearbeiten
                         </Button>
-                        <Button onClick={() => openEmployeeEditorForUser(profile.id, 'dokumente')}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Dokumente
+                        <Button size="sm" onClick={() => openEmployeeEditorForUser(profile.id, 'dokumente')}>
+                          <FileText className="w-4 h-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Dokumente</span>
                         </Button>
                         <Button
                           variant="outline"
@@ -771,7 +790,8 @@ export default function Admin() {
                             setDeleteDialogOpen(true);
                           }}
                         >
-                          Deaktivieren
+                          <span className="hidden sm:inline">Deaktivieren</span>
+                          <Trash2 className="w-4 h-4 sm:hidden" />
                         </Button>
                       </div>
                     </div>
@@ -803,7 +823,7 @@ export default function Admin() {
                     const documentPath = note.notizen?.replace("Krankmeldung: ", "");
 
                     return (
-                      <div key={note.id} className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                      <div key={note.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-lg border bg-card">
                         <div className="flex items-center gap-3">
                           <Avatar>
                             <AvatarFallback>
@@ -812,15 +832,15 @@ export default function Admin() {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium">
+                            <p className="font-medium text-sm sm:text-base">
                               {note.profiles.vorname} {note.profiles.nachname}
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-xs sm:text-sm text-muted-foreground">
                               {format(new Date(note.datum), "dd.MM.yyyy")}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
                           {documentPath && (
                             <Button
                               variant="outline"
@@ -887,11 +907,9 @@ export default function Admin() {
           </Card>
         </section>
 
-      </main>
-
       {/* Employee Detail Dialog */}
       <Dialog open={!!selectedEmployee} onOpenChange={() => setSelectedEmployee(null)}>
-        <DialogContent className="max-w-5xl max-h-[90vh]">
+        <DialogContent className="max-w-[95vw] sm:max-w-5xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>
               {selectedEmployee?.vorname} {selectedEmployee?.nachname}
@@ -920,7 +938,7 @@ export default function Admin() {
                 <form onSubmit={handleSaveEmployee} className="space-y-6">
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Persönliche Daten</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>Vorname *</Label>
                         <Input
@@ -952,8 +970,8 @@ export default function Admin() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Kontaktdaten</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="col-span-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="sm:col-span-2">
                         <Label>Adresse</Label>
                         <Input
                           value={formData.adresse || ""}
@@ -998,7 +1016,7 @@ export default function Admin() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Beschäftigung</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>Position</Label>
                         <Input
@@ -1061,8 +1079,8 @@ export default function Admin() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Bankverbindung</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="col-span-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="sm:col-span-2">
                         <Label>IBAN</Label>
                         <Input
                           value={formData.iban || ""}
@@ -1090,7 +1108,7 @@ export default function Admin() {
 
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Arbeitskleidung</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>Kleidungsgröße</Label>
                         <Input
@@ -1188,8 +1206,8 @@ export default function Admin() {
                       setSelectedEmployee(emp);
                     }}
                   >
-                    <div className="grid grid-cols-4 gap-4 items-center">
-                      <div className="col-span-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 items-center">
+                      <div className="sm:col-span-2">
                         <p className="font-medium">
                           {emp.vorname} {emp.nachname}
                         </p>
@@ -1396,6 +1414,7 @@ export default function Admin() {
           </CardContent>
         </Card>
       </section>
+      </main>
     </div>
   );
 }
