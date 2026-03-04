@@ -163,7 +163,7 @@ export const SignatureDialog = ({
       }
 
       // Send email via edge function
-      const { error: sendError } = await supabase.functions.invoke("send-disturbance-report", {
+      const { data: sendData, error: sendError } = await supabase.functions.invoke("send-disturbance-report", {
         body: {
           disturbance: {
             ...disturbance,
@@ -176,11 +176,17 @@ export const SignatureDialog = ({
       });
 
       if (sendError) {
-        console.error("Email send error:", sendError);
-        // Still mark as success since signature was saved
+        // Extract detailed error message for debugging
+        let errorDetail = sendError.message || "Unbekannter Fehler";
+        try {
+          const errorBody = await (sendError as any).context?.json?.();
+          if (errorBody?.error) errorDetail = errorBody.error;
+        } catch {}
+        console.error("Email send error:", sendError, "Detail:", errorDetail);
         toast({
-          title: "Unterschrift gespeichert",
-          description: "Die Unterschrift wurde gespeichert, aber die E-Mail konnte nicht gesendet werden.",
+          variant: "destructive",
+          title: "E-Mail konnte nicht gesendet werden",
+          description: errorDetail,
         });
       } else {
         toast({
