@@ -24,6 +24,7 @@ import {
   getTotalWorkingHours
 } from "@/lib/workingHours";
 import { notifyAdmins } from "@/lib/notifications";
+import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
 
 type Project = {
   id: string;
@@ -98,6 +99,8 @@ const TimeTracking = () => {
 
   const [existingDayEntries, setExistingDayEntries] = useState<ExistingEntry[]>([]);
   const [loadingDayEntries, setLoadingDayEntries] = useState(false);
+  const [showFillDialog, setShowFillDialog] = useState(false);
+  const [employeeWochenstunden, setEmployeeWochenstunden] = useState(40);
   
   const [showAbsenceDialog, setShowAbsenceDialog] = useState(false);
   
@@ -207,6 +210,14 @@ const TimeTracking = () => {
         const { data: profile } = await supabase.from("profiles").select("vorname, nachname").eq("id", adminEditUserId).single();
         if (profile) setAdminEditUserName(`${profile.vorname} ${profile.nachname}`.trim());
       }
+      // Load work model for remaining hours calculation
+      const targetUserId = (adminEditUserId && data?.role === "administrator") ? adminEditUserId : user.id;
+      const { data: empData } = await supabase
+        .from("employees")
+        .select("wochenstunden")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+      setEmployeeWochenstunden(empData?.wochenstunden || 40);
     };
     checkAdmin();
   }, [adminEditUserId]);
@@ -720,6 +731,57 @@ const TimeTracking = () => {
 
   const isDayBlocked = existingDayEntries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit));
 
+  const handleFillHoursSubmit = async (
+    projectId: string | null,
+    locationType: string,
+    description: string,
+    startTime: string,
+    endTime: string
+  ) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const targetUserId = (isAdminEditMode && isAdmin) ? adminEditUserId : user.id;
+
+    const [sH, sM] = startTime.split(":").map(Number);
+    const [eH, eM] = endTime.split(":").map(Number);
+    let totalMinutes = (eH * 60 + eM) - (sH * 60 + sM);
+    if (sH * 60 + sM < 780 && eH * 60 + eM > 720) {
+      totalMinutes -= Math.min(eH * 60 + eM, 780) - Math.max(sH * 60 + sM, 720);
+    }
+    const stunden = totalMinutes / 60;
+
+    const mainEntry = {
+      user_id: targetUserId,
+      datum: selectedDate,
+      project_id: projectId,
+      taetigkeit: "Arbeit",
+      stunden,
+      start_time: startTime,
+      end_time: endTime,
+      pause_minutes: 0,
+      pause_start: null,
+      pause_end: null,
+      location_type: locationType,
+      notizen: description || null,
+      week_type: null,
+    };
+
+    const { data: result, error } = await supabase.functions.invoke(
+      "create-team-time-entries",
+      { body: { mainEntry, teamEntries: [], createWorkerLinks: false } }
+    );
+
+    if (error || !result?.success) {
+      toast({ variant: "destructive", title: "Fehler", description: "Reststunden konnten nicht gebucht werden" });
+      return;
+    }
+
+    toast({ title: "Reststunden gebucht", description: `${stunden.toFixed(2)} h wurden erfolgreich gebucht` });
+    setShowFillDialog(false);
+    await fetchExistingDayEntries(selectedDate);
+  };
+
   if (loading) return <div className="p-4">Lädt...</div>;
 
   return (
@@ -856,6 +918,23 @@ const TimeTracking = () => {
                       {existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0).toFixed(2)} Stunden
                     </span>
                   </div>
+                  {(() => {
+                    const bookedTotal = existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0);
+                    const targetHours = getNormalWorkingHours(new Date(selectedDate + "T00:00:00"), employeeWochenstunden);
+                    const remaining = targetHours - bookedTotal;
+                    if (remaining <= 0.1 || targetHours <= 0) return null;
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                        onClick={() => setShowFillDialog(true)}
+                      >
+                        <Clock className="w-4 h-4 mr-2" />
+                        Reststunden auffüllen ({remaining.toFixed(2)} h)
+                      </Button>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-sm text-muted-foreground">
@@ -1303,6 +1382,29 @@ const TimeTracking = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Fill Remaining Hours Dialog */}
+        {(() => {
+          const bookedTotal = existingDayEntries.reduce((sum, e) => sum + Number(e.stunden), 0);
+          const targetHours = getNormalWorkingHours(new Date(selectedDate + "T00:00:00"), employeeWochenstunden);
+          const remaining = targetHours - bookedTotal;
+          const lastEndTime = existingDayEntries.reduce<string | null>((latest, e) => {
+            if (!e.end_time) return latest;
+            return (!latest || e.end_time > latest) ? e.end_time : latest;
+          }, null);
+          return (
+            <FillRemainingHoursDialog
+              open={showFillDialog}
+              onOpenChange={setShowFillDialog}
+              remainingHours={remaining}
+              bookedHours={bookedTotal}
+              targetHours={targetHours}
+              projects={projects}
+              lastEndTime={lastEndTime}
+              onSubmit={handleFillHoursSubmit}
+            />
+          );
+        })()}
 
       </div>
     </div>
