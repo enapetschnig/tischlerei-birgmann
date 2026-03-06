@@ -22,7 +22,7 @@ interface FillRemainingHoursDialogProps {
   targetHours: number;
   projects: Project[];
   lastEndTime: string | null;
-  onSubmit: (projectId: string | null, locationType: string, description: string, startTime: string, endTime: string) => Promise<void>;
+  onSubmit: (projectId: string | null, locationType: string, description: string, startTime: string, endTime: string, pauseMinutes: number, pauseStart: string | null, pauseEnd: string | null) => Promise<void>;
 }
 
 const calculateNextStartTime = (lastEndTime: string | null): string => {
@@ -58,10 +58,13 @@ export const FillRemainingHoursDialog = ({
   const [locationType, setLocationType] = useState<"baustelle" | "werkstatt">("werkstatt");
   const [projectId, setProjectId] = useState("");
   const [description, setDescription] = useState("");
+  const [pauseMinutes, setPauseMinutes] = useState(0);
+  const [pauseStart, setPauseStart] = useState("");
+  const [pauseEnd, setPauseEnd] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const startTime = calculateNextStartTime(lastEndTime);
-  const endTime = calculateEndTime(startTime, remainingHours);
+  const endTime = calculateEndTime(startTime, remainingHours + pauseMinutes / 60);
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -69,6 +72,9 @@ export const FillRemainingHoursDialog = ({
       setLocationType("werkstatt");
       setProjectId("");
       setDescription("");
+      setPauseMinutes(0);
+      setPauseStart("");
+      setPauseEnd("");
     }
   }, [open]);
 
@@ -80,7 +86,10 @@ export const FillRemainingHoursDialog = ({
         locationType,
         description,
         startTime,
-        endTime
+        endTime,
+        pauseMinutes,
+        pauseStart || null,
+        pauseEnd || null
       );
       onOpenChange(false);
     } finally {
@@ -125,6 +134,43 @@ export const FillRemainingHoursDialog = ({
             <div className="flex justify-between">
               <span className="text-muted-foreground">Wird gebucht:</span>
               <span className="font-mono font-medium">{startTime} - {endTime}</span>
+            </div>
+          </div>
+
+          {/* Pause */}
+          <div className="space-y-2">
+            <Label>Pause <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-xs text-muted-foreground">Minuten</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={pauseMinutes}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    setPauseMinutes(val);
+                  }}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Von</Label>
+                <Input
+                  type="time"
+                  value={pauseStart}
+                  onChange={(e) => setPauseStart(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Bis</Label>
+                <Input
+                  type="time"
+                  value={pauseEnd}
+                  onChange={(e) => setPauseEnd(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

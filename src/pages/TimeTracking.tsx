@@ -705,7 +705,10 @@ const TimeTracking = () => {
     locationType: string,
     description: string,
     startTime: string,
-    endTime: string
+    endTime: string,
+    pauseMinutes: number = 0,
+    pauseStart: string | null = null,
+    pauseEnd: string | null = null
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -714,7 +717,7 @@ const TimeTracking = () => {
 
     const [sH, sM] = startTime.split(":").map(Number);
     const [eH, eM] = endTime.split(":").map(Number);
-    const totalMinutes = (eH * 60 + eM) - (sH * 60 + sM);
+    const totalMinutes = (eH * 60 + eM) - (sH * 60 + sM) - pauseMinutes;
     const stunden = totalMinutes / 60;
 
     const mainEntry = {
@@ -725,9 +728,9 @@ const TimeTracking = () => {
       stunden,
       start_time: startTime,
       end_time: endTime,
-      pause_minutes: 0,
-      pause_start: null,
-      pause_end: null,
+      pause_minutes: pauseMinutes,
+      pause_start: pauseStart,
+      pause_end: pauseEnd,
       location_type: locationType,
       notizen: description || null,
       week_type: null,
