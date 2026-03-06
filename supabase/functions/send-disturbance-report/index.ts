@@ -322,8 +322,10 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
       }
 
       try {
+        // Detect image format from data URI
+        const imageFormat = imageData.startsWith("data:image/png") ? "PNG" : "JPEG";
         // Add image with max width 80mm, proportional height ~60mm
-        doc.addImage(imageData, "JPEG", margin, yPos, 80, 60);
+        doc.addImage(imageData, imageFormat, margin, yPos, 80, 60);
         yPos += 65;
 
         // Add filename below image
@@ -464,7 +466,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // Generate PDF
-    const pdfBase64 = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
+    let pdfBase64: string;
+    try {
+      pdfBase64 = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
+    } catch (pdfError) {
+      console.error("PDF generation failed:", pdfError);
+      throw new Error(`PDF-Erstellung fehlgeschlagen: ${pdfError instanceof Error ? pdfError.message : "Unbekannter Fehler"}`);
+    }
 
     // Generate simple email HTML
     const emailHtml = generateEmailHtml({ disturbance, materials, technicians });

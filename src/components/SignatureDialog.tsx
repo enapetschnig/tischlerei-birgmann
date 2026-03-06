@@ -105,13 +105,12 @@ export const SignatureDialog = ({
     setSending(true);
 
     try {
-      // Save signature to disturbance
+      // Save signature (without setting status to "gesendet" yet)
       const { error: updateError } = await supabase
         .from("disturbances")
         .update({
           unterschrift_kunde: signature,
           unterschrift_am: new Date().toISOString(),
-          status: "gesendet",
         })
         .eq("id", disturbance.id);
 
@@ -188,15 +187,21 @@ export const SignatureDialog = ({
           title: "E-Mail konnte nicht gesendet werden",
           description: errorDetail,
         });
+        // Dialog stays open so user can retry
       } else {
+        // Only set status to "gesendet" after successful email
+        await supabase
+          .from("disturbances")
+          .update({ status: "gesendet" })
+          .eq("id", disturbance.id);
+
         toast({
           title: "Regiebericht gesendet",
           description: "Der Bericht wurde erfolgreich per E-Mail versendet.",
         });
         onSuccess();
+        onOpenChange(false);
       }
-
-      onOpenChange(false);
     } catch (error) {
       console.error("Error sending report:", error);
       toast({

@@ -19,9 +19,7 @@ import { toast as sonnerToast } from "sonner";
 import {
   getNormalWorkingHours,
   getDefaultWorkTimes,
-  isNonWorkingDay,
-  getWeeklyTargetHours,
-  getTotalWorkingHours
+  getWeeklyTargetHours
 } from "@/lib/workingHours";
 import { notifyAdmins } from "@/lib/notifications";
 import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
@@ -117,7 +115,6 @@ const TimeTracking = () => {
   
   const [selectedDate, setSelectedDate] = useState(adminEditDate || new Date().toISOString().split('T')[0]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
-  const entryMode = "zeitraum" as const;
 
   // Fetch existing entries for selected date
   const fetchExistingDayEntries = async (date: string) => {
@@ -169,7 +166,7 @@ const TimeTracking = () => {
       } else if (!entries.some(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit))) {
         // Auto-fill default work times for the selected date
         const dateObj = new Date(date);
-        const defaults = getDefaultWorkTimes(dateObj);
+        const defaults = getDefaultWorkTimes(dateObj, employeeWochenstunden);
         if (defaults) {
           setTimeBlocks([createDefaultBlock(defaults.startTime, defaults.endTime, defaults.pauseStart, defaults.pauseEnd)]);
         } else {
@@ -358,8 +355,8 @@ const TimeTracking = () => {
   const applyFullDayPreset = () => {
     if (timeBlocks.length > 0) {
       const selectedDateObj = new Date(selectedDate);
-      const defaultTimes = getDefaultWorkTimes(selectedDateObj);
-      
+      const defaultTimes = getDefaultWorkTimes(selectedDateObj, employeeWochenstunden);
+
       if (!defaultTimes) {
         toast({ 
           variant: "destructive", 
@@ -423,8 +420,8 @@ const TimeTracking = () => {
     }
 
     const selectedDateObj = new Date(absenceData.date);
-    const automaticHours = getNormalWorkingHours(selectedDateObj);
-    const defaultTimes = getDefaultWorkTimes(selectedDateObj);
+    const automaticHours = getNormalWorkingHours(selectedDateObj, employeeWochenstunden);
+    const defaultTimes = getDefaultWorkTimes(selectedDateObj, employeeWochenstunden);
 
     let workingHours: number;
     let entryStartTime: string;
@@ -819,11 +816,8 @@ const TimeTracking = () => {
               <div className="rounded-lg border bg-card p-4">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {getWeeklyTargetHours(40)}h Wochensoll
+                    {getWeeklyTargetHours(employeeWochenstunden)}h Wochensoll
                   </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Mo–Fr: 8h netto • 06:30–15:30 (1h Mittagspause)
-                  </span>
                 </div>
               </div>
 
@@ -1051,7 +1045,7 @@ const TimeTracking = () => {
                           size="sm"
                           onClick={() => {
                             const dateObj = new Date(selectedDate);
-                            const defaults = getDefaultWorkTimes(dateObj);
+                            const defaults = getDefaultWorkTimes(dateObj, employeeWochenstunden);
                             if (defaults) {
                               updateBlock(block.id, {
                                 startTime: defaults.startTime,
@@ -1217,7 +1211,7 @@ const TimeTracking = () => {
                   checked={absenceData.isFullDay}
                   onCheckedChange={(checked) => {
                     const dateObj = new Date(absenceData.date);
-                    const defaults = getDefaultWorkTimes(dateObj);
+                    const defaults = getDefaultWorkTimes(dateObj, employeeWochenstunden);
                     setAbsenceData({
                       ...absenceData,
                       isFullDay: checked,
@@ -1235,15 +1229,15 @@ const TimeTracking = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Berechnete Stunden für diesen Tag:</span>
                     <Badge variant="secondary" className="text-lg font-bold px-3 py-1">
-                      {absenceData.customHours || getNormalWorkingHours(new Date(absenceData.date))} h
+                      {absenceData.customHours || getNormalWorkingHours(new Date(absenceData.date), employeeWochenstunden)} h
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {(() => {
                       const absenceDateObj = new Date(absenceData.date);
-                      const dayOfWeek = absenceDateObj.getDay();
-                      if (dayOfWeek === 0 || dayOfWeek === 6) return "Wochenende: 0 Stunden";
-                      return "Mo–Fr: 8 Stunden (06:30 – 15:30, 1h Mittagspause)";
+                      const hours = getNormalWorkingHours(absenceDateObj, employeeWochenstunden);
+                      if (hours === 0) return "Kein Arbeitstag: 0 Stunden";
+                      return `Arbeitstag: ${hours} Stunden`;
                     })()}
                   </div>
                   <div className="pt-2 border-t">
@@ -1254,7 +1248,7 @@ const TimeTracking = () => {
                         step="0.5"
                         min="0"
                         max="24"
-                        placeholder={String(getNormalWorkingHours(new Date(absenceData.date)))}
+                        placeholder={String(getNormalWorkingHours(new Date(absenceData.date), employeeWochenstunden))}
                         value={absenceData.customHours}
                         onChange={(e) => setAbsenceData({ ...absenceData, customHours: e.target.value })}
                         className="w-24 text-center"
@@ -1338,7 +1332,7 @@ const TimeTracking = () => {
                   variant="outline" 
                   onClick={() => {
                     setShowAbsenceDialog(false);
-                    setAbsenceData({ date: new Date().toISOString().split('T')[0], type: "urlaub", document: null, customHours: "", isFullDay: true, absenceStartTime: "07:00", absenceEndTime: "16:00", absencePauseMinutes: "30" });
+                    setAbsenceData({ date: new Date().toISOString().split('T')[0], type: "urlaub", document: null, customHours: "", isFullDay: true, absenceStartTime: "06:30", absenceEndTime: "15:30", absencePauseMinutes: "60" });
                   }}
                   disabled={submittingAbsence}
                 >
