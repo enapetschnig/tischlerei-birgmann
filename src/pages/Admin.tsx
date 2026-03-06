@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -593,11 +593,15 @@ export default function Admin() {
             <div className="flex-1">
               <h1 className="text-xl sm:text-2xl font-bold">Admin-Bereich</h1>
             </div>
+            <Button variant="outline" size="sm" onClick={() => navigate("/resource-planning")}>
+              <CalendarDays className="h-4 w-4 mr-2" />
+              Disponierung
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 space-y-8">
+      <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 space-y-8 overflow-x-hidden">
         {/* ===== WARTENDE AKTIVIERUNGEN ===== */}
         {profiles.filter(p => !p.is_active).length > 0 && (
           <section>
