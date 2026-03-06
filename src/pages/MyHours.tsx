@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock, Building2, Hammer, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Clock, Building2, Hammer, Pencil, Trash2, Calendar, Palmtree } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -38,10 +41,19 @@ const MyHours = () => {
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [vacationData, setVacationData] = useState<{
+    totalDays: number;
+    usedDays: number;
+    vacationDates: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetchEntries();
   }, [selectedMonth]);
+
+  useEffect(() => {
+    fetchVacationData();
+  }, []);
 
   const fetchEntries = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -66,6 +78,42 @@ const MyHours = () => {
       setTotalHours(sum);
     }
     setLoading(false);
+  };
+
+  const fetchVacationData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const currentYear = new Date().getFullYear();
+
+    // Get leave balance for current year
+    const { data: balance } = await supabase
+      .from("leave_balances")
+      .select("total_days")
+      .eq("user_id", user.id)
+      .eq("year", currentYear)
+      .single();
+
+    // Count vacation days from time entries (Tätigkeit = "Urlaub")
+    const yearStart = `${currentYear}-01-01`;
+    const yearEnd = `${currentYear}-12-31`;
+    const { data: vacationEntries } = await supabase
+      .from("time_entries")
+      .select("datum")
+      .eq("user_id", user.id)
+      .eq("taetigkeit", "Urlaub")
+      .gte("datum", yearStart)
+      .lte("datum", yearEnd)
+      .order("datum", { ascending: true });
+
+    // Unique dates (in case of multiple entries per day)
+    const uniqueDates = [...new Set((vacationEntries || []).map(e => e.datum))];
+
+    setVacationData({
+      totalDays: balance?.total_days ?? 25,
+      usedDays: uniqueDates.length,
+      vacationDates: uniqueDates,
+    });
   };
 
   const calculateMorningEnd = (entry: TimeEntry) => {
@@ -349,6 +397,51 @@ const MyHours = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Urlaubskonto */}
+        {vacationData && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palmtree className="h-5 w-5" />
+                Urlaubskonto {new Date().getFullYear()}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center p-4 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Gesamt</p>
+                  <p className="text-2xl font-bold">{vacationData.totalDays}</p>
+                  <p className="text-xs text-muted-foreground">Tage</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-primary/10">
+                  <p className="text-sm text-muted-foreground">Verbraucht</p>
+                  <p className="text-2xl font-bold text-primary">{vacationData.usedDays}</p>
+                  <p className="text-xs text-muted-foreground">Tage</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-green-50 dark:bg-green-950/20">
+                  <p className="text-sm text-muted-foreground">Verbleibend</p>
+                  <p className="text-2xl font-bold text-green-600">{vacationData.totalDays - vacationData.usedDays}</p>
+                  <p className="text-xs text-muted-foreground">Tage</p>
+                </div>
+              </div>
+
+              {vacationData.vacationDates.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-3">Urlaubstage</p>
+                  <div className="flex flex-wrap gap-2">
+                    {vacationData.vacationDates.map((date) => (
+                      <Badge key={date} variant="secondary" className="text-xs">
+                        <Calendar className="h-3 w-3 mr-1" />
+                        {format(new Date(date), "dd.MM.yyyy (EEEE)", { locale: de })}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Edit Dialog */}

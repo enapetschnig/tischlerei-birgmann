@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Users } from "lucide-react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Users, ArrowLeft } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
 import { PageHeader } from "@/components/PageHeader";
@@ -71,6 +72,20 @@ const createDefaultBlock = (startTime = "", endTime = "", pauseStart = "", pause
 
 const TimeTracking = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Admin editing mode: when admin navigates here from HoursReport with user_id param
+  const adminEditUserId = searchParams.get("user_id");
+  const adminEditDate = searchParams.get("date");
+  const returnMonth = searchParams.get("return_month");
+  const returnYear = searchParams.get("return_year");
+  const returnEmployee = searchParams.get("return_employee");
+  const isAdminEditMode = !!adminEditUserId;
+
+  const [adminEditUserName, setAdminEditUserName] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,7 +113,7 @@ const TimeTracking = () => {
     absencePauseMinutes: "60",
   });
   
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(adminEditDate || new Date().toISOString().split('T')[0]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([createDefaultBlock()]);
   const entryMode = "zeitraum" as const;
 
@@ -111,6 +126,8 @@ const TimeTracking = () => {
       return;
     }
 
+    const targetUserId = (isAdminEditMode && isAdmin) ? adminEditUserId : user.id;
+
     const { data, error } = await supabase
       .from("time_entries")
       .select(`
@@ -122,7 +139,7 @@ const TimeTracking = () => {
         pause_start,
         projects (name, plz)
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", targetUserId)
       .eq("datum", date)
       .order("start_time");
 
@@ -169,6 +186,21 @@ const TimeTracking = () => {
   useEffect(() => {
     fetchExistingDayEntries(selectedDate);
   }, [selectedDate]);
+
+  // Check admin status and load target user name for admin edit mode
+  useEffect(() => {
+    const checkAdmin = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).single();
+      setIsAdmin(data?.role === "administrator");
+      if (adminEditUserId && data?.role === "administrator") {
+        const { data: profile } = await supabase.from("profiles").select("vorname, nachname").eq("id", adminEditUserId).single();
+        if (profile) setAdminEditUserName(`${profile.vorname} ${profile.nachname}`.trim());
+      }
+    };
+    checkAdmin();
+  }, [adminEditUserId]);
 
   useEffect(() => {
     fetchProjects();
@@ -511,6 +543,8 @@ const TimeTracking = () => {
       return;
     }
 
+    const submitUserId = (isAdminEditMode && isAdmin) ? adminEditUserId! : user.id;
+
     // Validate all blocks
     for (let i = 0; i < timeBlocks.length; i++) {
       const block = timeBlocks[i];
@@ -565,7 +599,7 @@ const TimeTracking = () => {
     const { data: existingEntries } = await supabase
       .from("time_entries")
       .select("id, start_time, end_time, taetigkeit")
-      .eq("user_id", user.id)
+      .eq("user_id", submitUserId)
       .eq("datum", selectedDate);
 
     if (existingEntries && existingEntries.length > 0) {
@@ -609,9 +643,9 @@ const TimeTracking = () => {
       const blockHours = calculateBlockHours(block);
       const pauseMinutes = calculateBlockPauseMinutes(block);
 
-      // Prepare main entry for current user
+      // Prepare main entry for target user (self or admin-edit target)
       const mainEntry = {
-        user_id: user.id,
+        user_id: submitUserId,
         datum: selectedDate,
         project_id: block.locationType === "werkstatt" ? null : (block.projectId || null),
         taetigkeit: block.taetigkeit,
@@ -669,7 +703,14 @@ const TimeTracking = () => {
         ? ` (inkl. Team-Mitglieder)`
         : "";
       toast({ title: "Erfolg", description: `${totalEntriesCreated} Eintrag/Einträge gespeichert${teamInfo}` });
-      
+
+      // In admin edit mode, navigate back to hours report
+      if (isAdminEditMode && returnMonth && returnYear) {
+        setSaving(false);
+        navigate(`/hours-report?employee=${returnEmployee || ""}&month=${returnMonth}&year=${returnYear}`);
+        return;
+      }
+
       // Refresh existing entries
       await fetchExistingDayEntries(selectedDate);
     } else {
@@ -684,15 +725,36 @@ const TimeTracking = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <PageHeader title="Zeiterfassung" />
-      
+      <PageHeader title={isAdminEditMode ? `Zeiterfassung für ${adminEditUserName}` : "Zeiterfassung"} />
+
       <div className="p-4">
+        {/* Admin edit mode banner */}
+        {isAdminEditMode && adminEditUserName && (
+          <div className="max-w-2xl mx-auto mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-amber-600" />
+              <span className="text-sm font-medium text-amber-800">
+                Du bearbeitest Einträge für <strong>{adminEditUserName}</strong>
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`/hours-report?employee=${returnEmployee || ""}&month=${returnMonth || ""}&year=${returnYear || ""}`)}
+              className="text-amber-700 hover:text-amber-900"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Zurück
+            </Button>
+          </div>
+        )}
+
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="h-5 w-5" />
-                <CardTitle>Zeiterfassung</CardTitle>
+                <CardTitle>{isAdminEditMode ? `Zeiterfassung – ${adminEditUserName}` : "Zeiterfassung"}</CardTitle>
               </div>
               <Button 
                 variant="outline" 

@@ -14,9 +14,13 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, User, FileText, Clock, Mail, Phone, MapPin, FileSpreadsheet, Shirt } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ArrowLeft, Plus, User, FileText, Clock, Mail, Phone, MapPin, FileSpreadsheet, Shirt, Trash2, Loader2, Download } from "lucide-react";
 import { format } from "date-fns";
+import { de } from "date-fns/locale";
+import * as XLSX from "xlsx-js-style";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
+import { getNormalWorkingHours } from "@/lib/workingHours";
 
 interface Employee {
   id: string;
@@ -53,6 +57,7 @@ export default function Employees() {
   const [formData, setFormData] = useState<Partial<Employee>>({});
   const [newEmployee, setNewEmployee] = useState({ vorname: "", nachname: "", email: "", wochenstunden: 40 });
   const [showSizesDialog, setShowSizesDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     checkAdminAccess();
@@ -136,6 +141,157 @@ export default function Employees() {
       setSelectedEmployee(null);
     } catch (error: any) {
       toast({ title: "Fehler", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const generateExcelBackup = async (employee: Employee): Promise<Uint8Array | null> => {
+    if (!employee.user_id) return null;
+
+    const { data: entries } = await supabase
+      .from("time_entries")
+      .select("*")
+      .eq("user_id", employee.user_id)
+      .order("datum", { ascending: true });
+
+    if (!entries || entries.length === 0) return null;
+
+    const wb = XLSX.utils.book_new();
+
+    // Group entries by month
+    const grouped: Record<string, typeof entries> = {};
+    entries.forEach((e) => {
+      const key = e.datum.substring(0, 7); // "YYYY-MM"
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(e);
+    });
+
+    const monthNames = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+    Object.keys(grouped).sort().forEach((monthKey) => {
+      const monthEntries = grouped[monthKey];
+      const [y, m] = monthKey.split("-").map(Number);
+      const sheetName = `${monthNames[m - 1]} ${y}`;
+
+      const header = ["Datum", "Tag", "Start", "Ende", "Pause", "Stunden", "Tätigkeit", "Ort", "Notizen"];
+      const rows = monthEntries.map((e) => {
+        const date = new Date(e.datum);
+        const dayName = format(date, "EEEE", { locale: de });
+        return [
+          format(date, "dd.MM.yyyy"),
+          dayName,
+          e.start_time?.slice(0, 5) || "",
+          e.end_time?.slice(0, 5) || "",
+          e.pause_minutes || 0,
+          e.stunden,
+          e.taetigkeit || "",
+          e.location_type || "",
+          e.notizen || "",
+        ];
+      });
+
+      const totalHours = monthEntries.reduce((sum, e) => sum + (e.stunden || 0), 0);
+      rows.push(["", "", "", "", "Summe:", totalHours, "", "", ""]);
+
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      ws["!cols"] = [{ wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 25 }];
+
+      // Bold header
+      for (let c = 0; c < header.length; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+        if (cell) cell.s = { font: { bold: true } };
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
+    });
+
+    return XLSX.write(wb, { type: "array", bookType: "xlsx" }) as Uint8Array;
+  };
+
+  const handleDeleteEmployee = async () => {
+    if (!selectedEmployee) return;
+    setDeleting(true);
+
+    try {
+      const fullName = `${selectedEmployee.vorname} ${selectedEmployee.nachname}`;
+
+      // 1. Generate Excel backup
+      const excelData = await generateExcelBackup(selectedEmployee);
+
+      if (excelData) {
+        // Download locally
+        const blob = new Blob([excelData], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Stundenbackup_${selectedEmployee.nachname}_${selectedEmployee.vorname}_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Upload to Supabase storage
+        const fileName = `${selectedEmployee.id}_${selectedEmployee.nachname}_${selectedEmployee.vorname}_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+        await supabase.storage
+          .from("deleted-users")
+          .upload(fileName, excelData, {
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            upsert: true,
+          });
+      }
+
+      // 2. Update time_entries: set user_id to NULL, add name to notizen
+      if (selectedEmployee.user_id) {
+        const { data: timeEntries } = await supabase
+          .from("time_entries")
+          .select("id, notizen")
+          .eq("user_id", selectedEmployee.user_id);
+
+        if (timeEntries && timeEntries.length > 0) {
+          // Update in batches
+          for (const entry of timeEntries) {
+            const newNotizen = entry.notizen
+              ? `[${fullName}] ${entry.notizen}`
+              : `[${fullName}]`;
+            await supabase
+              .from("time_entries")
+              .update({ user_id: null, notizen: newNotizen })
+              .eq("id", entry.id);
+          }
+        }
+
+        // 3. Delete disturbance reports
+        await supabase
+          .from("disturbances")
+          .delete()
+          .eq("user_id", selectedEmployee.user_id);
+
+        // 4. Deactivate profile
+        await supabase
+          .from("profiles")
+          .update({ is_active: false })
+          .eq("id", selectedEmployee.user_id);
+      }
+
+      // 5. Delete employee record
+      await supabase
+        .from("employees")
+        .delete()
+        .eq("id", selectedEmployee.id);
+
+      toast({
+        title: "Mitarbeiter gelöscht",
+        description: `${fullName} wurde gelöscht. ${excelData ? "Excel-Backup wurde heruntergeladen und gespeichert." : "Keine Stundeneinträge vorhanden."}`,
+      });
+
+      setSelectedEmployee(null);
+      fetchEmployees();
+    } catch (error: any) {
+      console.error("Error deleting employee:", error);
+      toast({
+        variant: "destructive",
+        title: "Fehler beim Löschen",
+        description: error.message || "Der Mitarbeiter konnte nicht gelöscht werden",
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -501,11 +657,49 @@ export default function Employees() {
                     />
                   </div>
 
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={() => setSelectedEmployee(null)}>
-                      Abbrechen
-                    </Button>
-                    <Button type="submit">Speichern</Button>
+                  <div className="flex justify-between">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="destructive" size="sm" disabled={deleting}>
+                          {deleting ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Wird gelöscht...</>
+                          ) : (
+                            <><Trash2 className="w-4 h-4 mr-2" />Mitarbeiter löschen</>
+                          )}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Mitarbeiter endgültig löschen?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            <strong>{selectedEmployee?.vorname} {selectedEmployee?.nachname}</strong> wird unwiderruflich gelöscht.
+                            <br /><br />
+                            Folgendes passiert:
+                            <ul className="list-disc pl-5 mt-2 space-y-1">
+                              <li>Excel-Backup der Stundeneinträge wird heruntergeladen und in der Cloud gespeichert</li>
+                              <li>Stundeneinträge werden anonymisiert (Name wird in Notizen gespeichert)</li>
+                              <li>Regieberichte werden gelöscht</li>
+                              <li>Benutzerkonto wird deaktiviert</li>
+                            </ul>
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDeleteEmployee}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Endgültig löschen
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" onClick={() => setSelectedEmployee(null)}>
+                        Abbrechen
+                      </Button>
+                      <Button type="submit">Speichern</Button>
+                    </div>
                   </div>
                 </form>
               </ScrollArea>

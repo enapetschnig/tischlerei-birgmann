@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Download, FileSpreadsheet, Building2, Hammer, ChevronDown } from "lucide-react";
+import { ArrowLeft, Download, FileSpreadsheet, Building2, ChevronDown, Pencil } from "lucide-react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
@@ -21,6 +21,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getNormalWorkingHours, getWorkModelLabel } from "@/lib/workingHours";
+
+// Calculate hours directly from start/end times with automatic 12:00-13:00 lunch break
+const calculateHoursFromTimes = (entry: { start_time: string; end_time: string; stunden: number }): number => {
+  if (!entry.start_time || !entry.end_time) return entry.stunden;
+  const [startH, startM] = entry.start_time.split(":").map(Number);
+  const [endH, endM] = entry.end_time.split(":").map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+  let totalMinutes = endMinutes - startMinutes;
+  if (totalMinutes <= 0) return entry.stunden;
+  // Automatic lunch break: subtract overlap with 12:00-13:00
+  if (startMinutes < 13 * 60 && endMinutes > 12 * 60) {
+    const overlapStart = Math.max(startMinutes, 12 * 60);
+    const overlapEnd = Math.min(endMinutes, 13 * 60);
+    totalMinutes -= (overlapEnd - overlapStart);
+  }
+  return totalMinutes / 60;
+};
 
 interface TimeEntry {
   id: string;
@@ -117,7 +135,11 @@ export default function HoursReport() {
       setSelectedUserId(user.id);
     } else {
       const employeeParam = searchParams.get("employee");
+      const monthParam = searchParams.get("month");
+      const yearParam = searchParams.get("year");
       if (employeeParam) setSelectedUserId(employeeParam);
+      if (monthParam) setMonth(parseInt(monthParam));
+      if (yearParam) setYear(parseInt(yearParam));
     }
   };
 
@@ -182,10 +204,10 @@ export default function HoursReport() {
   };
 
   const monthDays = generateMonthDays();
-  const totalHours = timeEntries.reduce((sum, entry) => sum + entry.stunden, 0);
+  const totalHours = timeEntries.reduce((sum, entry) => sum + calculateHoursFromTimes(entry), 0);
   const totalDifference = timeEntries.reduce((sum, entry) => {
     const entryDate = parseISO(entry.datum);
-    return sum + calculateDifference(entryDate, entry.stunden);
+    return sum + calculateDifference(entryDate, calculateHoursFromTimes(entry));
   }, 0);
 
   const addBordersToCell = (cell: any, thick: boolean = false, centered: boolean = false) => {
@@ -256,9 +278,10 @@ export default function HoursReport() {
             const actualMorningEnd = lunchBreak?.start || "";
             const actualAfternoonStart = lunchBreak?.end || "";
             const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak ? `${lunchBreak.start} - ${lunchBreak.end}` : "";
-            const diff = calculateDifference(dayDate, entry.stunden);
+            const calcHours = calculateHoursFromTimes(entry);
+            const diff = calculateDifference(dayDate, calcHours);
             const diffText = diff !== 0 ? diff.toFixed(2) : "";
-            worksheetData.push([displayDay, entry.start_time?.substring(0, 5) || "", actualMorningEnd, actualPauseText, actualAfternoonStart, entry.end_time?.substring(0, 5) || "", entry.stunden.toFixed(2), diffText, ortText, projektName, entry.taetigkeit, plz]);
+            worksheetData.push([displayDay, entry.start_time?.substring(0, 5) || "", actualMorningEnd, actualPauseText, actualAfternoonStart, entry.end_time?.substring(0, 5) || "", calcHours.toFixed(2), diffText, ortText, projektName, entry.taetigkeit, plz]);
           } else {
             const isWorkday = getNormalWorkingHours(dayDate, employeeWochenstunden) > 0;
             const regelarbeitszeit = getNormalWorkingHours(dayDate, employeeWochenstunden);
@@ -271,8 +294,8 @@ export default function HoursReport() {
           }
         });
         if (dayEntries.length > 1) {
-          const dayTotalHours = dayEntries.reduce((sum, e) => sum + e.stunden, 0);
-          const dayTotalDiff = dayEntries.reduce((sum, e) => sum + calculateDifference(dayDate, e.stunden), 0);
+          const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
+          const dayTotalDiff = dayEntries.reduce((sum, e) => sum + calculateDifference(dayDate, calculateHoursFromTimes(e)), 0);
           if (includeZDA) {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalDiff !== 0 ? dayTotalDiff.toFixed(2) : "", "", "", "", ""]);
           } else {
@@ -471,17 +494,18 @@ export default function HoursReport() {
                           <TableHead>Ort</TableHead>
                           <TableHead>Projekt</TableHead>
                           <TableHead>Tätigkeit</TableHead>
+                          {isAdmin && <TableHead className="w-[50px]"></TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {loading ? (
-                          <TableRow><TableCell colSpan={9} className="text-center">Lade...</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={isAdmin ? 10 : 9} className="text-center">Lade...</TableCell></TableRow>
                         ) : monthDays.length === 0 ? (
-                          <TableRow><TableCell colSpan={9} className="text-center">Keine Daten verfügbar</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={isAdmin ? 10 : 9} className="text-center">Keine Daten verfügbar</TableCell></TableRow>
                         ) : (
                           monthDays.map((day) => {
                             const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), day.date));
-                            const dayTotalHours = dayEntries.reduce((sum, e) => sum + e.stunden, 0);
+                            const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
                             const hasMultipleEntries = dayEntries.length > 1;
 
                             if (dayEntries.length === 0) {
@@ -493,14 +517,15 @@ export default function HoursReport() {
                                       <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell colSpan={8}></TableCell>
+                                  <TableCell colSpan={isAdmin ? 9 : 8}></TableCell>
                                 </TableRow>
                               );
                             }
 
                             return dayEntries.map((entry, entryIndex) => {
                               const lunchBreak = calculateLunchBreak(entry);
-                              const diff = calculateDifference(day.date, entry.stunden);
+                              const calcHours = calculateHoursFromTimes(entry);
+                              const diff = calculateDifference(day.date, calcHours);
                               const project = projects[entry.project_id];
                               const ortIcon = entry.location_type === "baustelle" ? "🏗️" : entry.location_type === "werkstatt" ? "🔧" : "";
                               const ortText = entry.location_type === "baustelle" ? "Baustelle" : entry.location_type === "werkstatt" ? "Werkstatt" : "";
@@ -534,7 +559,7 @@ export default function HoursReport() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
-                                    {entry.stunden.toFixed(2)} h
+                                    {calcHours.toFixed(2)} h
                                     {hasMultipleEntries && isLastEntry && (
                                       <div className="text-xs text-primary font-bold mt-1">Σ {dayTotalHours.toFixed(2)} h</div>
                                     )}
@@ -551,6 +576,21 @@ export default function HoursReport() {
                                   </TableCell>
                                   <TableCell className="max-w-[150px] truncate">{projektName}</TableCell>
                                   <TableCell className="max-w-[150px] truncate">{entry.taetigkeit}</TableCell>
+                                  {isAdmin && (
+                                    <TableCell>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigate(`/time-tracking?user_id=${selectedUserId}&date=${entry.datum}&return_month=${month}&return_year=${year}&return_employee=${selectedUserId}`);
+                                        }}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               );
                             });
@@ -564,7 +604,7 @@ export default function HoursReport() {
                           <TableCell className={cn("text-right font-bold", totalDifference > 0 && "text-green-600", totalDifference < 0 && "text-destructive")}>
                             {totalDifference > 0 ? "+" : ""}{totalDifference.toFixed(2)} h
                           </TableCell>
-                          <TableCell colSpan={3}></TableCell>
+                          <TableCell colSpan={isAdmin ? 4 : 3}></TableCell>
                         </TableRow>
                       </TableFooter>
                     </Table>
