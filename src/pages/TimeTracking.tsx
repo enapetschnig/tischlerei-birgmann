@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Clock, Plus, AlertTriangle, CheckCircle2, Calendar, Sun, Trash2, Users, ArrowLeft } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { MultiEmployeeSelect } from "@/components/MultiEmployeeSelect";
 import { PageHeader } from "@/components/PageHeader";
 import { format, startOfWeek } from "date-fns";
 import { de } from "date-fns/locale";
@@ -182,6 +181,16 @@ const TimeTracking = () => {
     setLoadingDayEntries(false);
   };
 
+  const handleDeleteExistingEntry = async (entryId: string) => {
+    const { error } = await supabase.from("time_entries").delete().eq("id", entryId);
+    if (error) {
+      toast({ variant: "destructive", title: "Fehler", description: "Eintrag konnte nicht gelöscht werden" });
+    } else {
+      toast({ title: "Gelöscht", description: "Eintrag wurde entfernt" });
+      fetchExistingDayEntries(selectedDate);
+    }
+  };
+
   // Load existing entries when date changes
   useEffect(() => {
     fetchExistingDayEntries(selectedDate);
@@ -303,13 +312,6 @@ const TimeTracking = () => {
   // Remove a time block
   const removeBlock = (blockId: string) => {
     setTimeBlocks(prev => prev.filter(block => block.id !== blockId));
-  };
-
-  // Update selected employees for a block
-  const updateBlockEmployees = (blockId: string, employees: string[]) => {
-    setTimeBlocks(prev => prev.map(block =>
-      block.id === blockId ? { ...block, selectedEmployees: employees } : block
-    ));
   };
 
   // Calculate pause minutes for a block
@@ -699,10 +701,7 @@ const TimeTracking = () => {
     }
 
     if (!hasError) {
-      const teamInfo = timeBlocks.some(b => b.selectedEmployees.length > 0)
-        ? ` (inkl. Team-Mitglieder)`
-        : "";
-      toast({ title: "Erfolg", description: `${totalEntriesCreated} Eintrag/Einträge gespeichert${teamInfo}` });
+      toast({ title: "Erfolg", description: `${totalEntriesCreated} Eintrag/Einträge gespeichert` });
 
       // In admin edit mode, navigate back to hours report
       if (isAdminEditMode && returnMonth && returnYear) {
@@ -835,7 +834,17 @@ const TimeTracking = () => {
                               {entry.project_name ? `${entry.project_name}` : entry.taetigkeit}
                             </span>
                           </div>
-                          <span className="font-medium">{Number(entry.stunden).toFixed(2)}h</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{Number(entry.stunden).toFixed(2)}h</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteExistingEntry(entry.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1010,17 +1019,6 @@ const TimeTracking = () => {
                           Regelarbeitszeit einfüllen
                         </Button>
 
-                        {/* Multi-employee selection */}
-                        <div className="border-t pt-3">
-                          <MultiEmployeeSelect
-                            selectedEmployees={block.selectedEmployees}
-                            onSelectionChange={(employees) => updateBlockEmployees(block.id, employees)}
-                            date={selectedDate}
-                            startTime={block.startTime}
-                            endTime={block.endTime}
-                            label="Weitere Mitarbeiter (optional)"
-                          />
-                        </div>
 
                         {/* Block hours */}
                         <div className="bg-muted/50 rounded px-3 py-2 flex items-center justify-between text-sm">

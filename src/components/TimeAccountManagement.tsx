@@ -343,7 +343,7 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
                 <Clock className="h-5 w-5" />
                 Zeitkonten
               </CardTitle>
-              <CardDescription>ZDA-Konten pro Mitarbeiter</CardDescription>
+              <CardDescription>ZA-Konten pro Mitarbeiter</CardDescription>
             </div>
             <Button variant="outline" onClick={() => setShowCloseMonthDialog(true)}>
               <CalendarCheck className="h-4 w-4 mr-2" />
@@ -406,7 +406,7 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
               <Select value={adjustType} onValueChange={(v) => setAdjustType(v as "gutschrift" | "abzug")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gutschrift">Gutschrift (ZDA)</SelectItem>
+                  <SelectItem value="gutschrift">Gutschrift (ZA)</SelectItem>
                   <SelectItem value="abzug">Abzug (Zeitausgleich / ZA)</SelectItem>
                 </SelectContent>
               </Select>
@@ -468,7 +468,7 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
               Monat abschließen
             </DialogTitle>
             <DialogDescription>
-              ZDA-Stunden berechnen, buchen und Konten auf 0 setzen
+              ZA-Stunden berechnen, buchen und Konten auf 0 setzen
             </DialogDescription>
           </DialogHeader>
 

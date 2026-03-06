@@ -223,7 +223,7 @@ export default function HoursReport() {
     };
   };
 
-  const exportToExcel = (includeZDA: boolean = true) => {
+  const exportToExcel = (includeZA: boolean = true) => {
     if (!selectedUserId) { toast({ title: "Kein Mitarbeiter ausgewählt", variant: "destructive" }); return; }
     const employeeName = profiles[selectedUserId] ? `${profiles[selectedUserId].vorname} ${profiles[selectedUserId].nachname}` : "Mitarbeiter";
     const monthNamesShort = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -238,9 +238,9 @@ export default function HoursReport() {
       ["", "", "", "", "", "", "", "", "", "", "", ""],
     ];
 
-    if (includeZDA) {
+    if (includeZA) {
       worksheetData.push(
-        ["Datum", "V o r m i t t a g", "", "Unterbrechung", "N a c h m i t t a g", "", "Stunden", "ZDA", "Ort", "Projekt", "Tätigkeit", "PLZ"],
+        ["Datum", "V o r m i t t a g", "", "Unterbrechung", "N a c h m i t t a g", "", "Stunden", "ZA", "Ort", "Projekt", "Tätigkeit", "PLZ"],
         ["", "Beginn", "Ende", "von - bis", "Beginn", "Ende", "Gesamt", "", "", "", "", ""]
       );
     } else {
@@ -274,7 +274,7 @@ export default function HoursReport() {
           const plz = (isAbsence || isDisturbance) ? "" : entry.location_type === "baustelle" ? (project?.plz || "") : "";
           const displayDay = entryIndex === 0 ? day : "";
 
-          if (includeZDA) {
+          if (includeZA) {
             const actualMorningEnd = lunchBreak?.start || "";
             const actualAfternoonStart = lunchBreak?.end || "";
             const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak ? `${lunchBreak.start} - ${lunchBreak.end}` : "";
@@ -296,7 +296,7 @@ export default function HoursReport() {
         if (dayEntries.length > 1) {
           const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
           const dayTotalDiff = dayEntries.reduce((sum, e) => sum + calculateDifference(dayDate, calculateHoursFromTimes(e)), 0);
-          if (includeZDA) {
+          if (includeZA) {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalDiff !== 0 ? dayTotalDiff.toFixed(2) : "", "", "", "", ""]);
           } else {
             const regelarbeitszeitTag = getNormalWorkingHours(dayDate, employeeWochenstunden);
@@ -316,7 +316,7 @@ export default function HoursReport() {
       return summe;
     };
 
-    if (includeZDA) {
+    if (includeZA) {
       worksheetData.push(["", "", "", "", "", "SUMME", totalHours.toFixed(2), totalDifference.toFixed(2), "", "", "", ""]);
     } else {
       const regelarbeitszeitSumme = calculateRegelarbeitszeitSumme();
@@ -324,41 +324,21 @@ export default function HoursReport() {
     }
 
     worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    if (includeZDA) {
-      worksheetData.push(["", "Hiermit bestätige ich die Richtigkeit der von mir angegebenen ZDA-Stunden.", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", `Derzeitiger offener ZDA-Stand: ${totalDifference.toFixed(2)}`, "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "Restliche ZDA-Stunden wurden zur Gänze abgegolten.", "", "", "", "", "", "", "", "", "", ""]);
-    } else {
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-      worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    }
-    worksheetData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    worksheetData.push(["", "Datum:", "", "", "", "Unterschrift:", "", "", "", "", "", ""]);
+    worksheetData.push(["", "Datum und Unterschrift", "", "", "", "", "", "", "", "", "", ""]);
 
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
     ws["!cols"] = [{ wch: 12 }, { wch: 24 }, { wch: 24 }, { wch: 26 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 20 }, { wch: 6 }];
 
-    const sumRowIndex = worksheetData.length - 9;
     ws["!merges"] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
       { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } }, { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } },
       { s: { r: 5, c: 0 }, e: { r: 5, c: 1 } }, { s: { r: 5, c: 2 }, e: { r: 5, c: 7 } },
       { s: { r: 5, c: 9 }, e: { r: 5, c: 11 } },
       { s: { r: 7, c: 1 }, e: { r: 7, c: 2 } }, { s: { r: 7, c: 4 }, e: { r: 7, c: 5 } },
-      { s: { r: sumRowIndex + 4, c: 1 }, e: { r: sumRowIndex + 4, c: 10 } },
-      { s: { r: sumRowIndex + 6, c: 1 }, e: { r: sumRowIndex + 6, c: 10 } },
-      { s: { r: sumRowIndex + 7, c: 1 }, e: { r: sumRowIndex + 7, c: 10 } }
     ];
 
     ws["!rows"] = ws["!rows"] || [];
     [0, 1, 2, 3].forEach((r) => { ws["!rows"][r] = { hpt: 18 }; });
-    ws["!rows"][sumRowIndex + 4] = { hpt: 30 };
-    ws["!rows"][sumRowIndex + 6] = { hpt: 25 };
 
     const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
     for (let R = range.s.r; R <= range.e.r; ++R) {
@@ -367,9 +347,9 @@ export default function HoursReport() {
         if (!ws[cellAddress]) { ws[cellAddress] = { t: "s", v: "" }; }
         const isFirmenHeader = R >= 0 && R <= 3;
         const isHeaderRow = R === 7 || R === 8;
-        const footerBaseRow = worksheetData.length - 9;
-        const isSumRow = R === footerBaseRow;
-        const isFooterRow = R >= footerBaseRow + 1;
+        const sumRow = worksheetData.length - 3;
+        const isSumRow = R === sumRow;
+        const isFooterRow = R >= sumRow + 1;
         const borderStyle = isHeaderRow ? "medium" : "thin";
         if (isFirmenHeader || isFooterRow) {
           ws[cellAddress].s = { alignment: { vertical: "center", horizontal: "left", wrapText: true }, font: { bold: R === 0, size: R === 0 ? 14 : 11 } };
@@ -385,7 +365,7 @@ export default function HoursReport() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Arbeitszeit");
-    const suffix = includeZDA ? "_mit_ZDA" : "_ohne_ZDA";
+    const suffix = includeZA ? "_mit_ZA" : "_ohne_ZA";
     XLSX.writeFile(wb, `Arbeitszeiterfassung_${employeeName}_${monthNamesShort[month - 1]}_${year}${suffix}.xlsx`);
     toast({ title: "Excel exportiert", description: "Datei wurde heruntergeladen" });
   };
@@ -420,7 +400,7 @@ export default function HoursReport() {
                     <FileSpreadsheet className="w-5 h-5 sm:w-6 sm:h-6" />
                     Arbeitszeiterfassung nach Mitarbeitern
                   </CardTitle>
-                  <CardDescription className="text-xs sm:text-sm">Monatsberichte mit ZDA exportieren</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">Monatsberichte mit ZA exportieren</CardDescription>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -432,8 +412,8 @@ export default function HoursReport() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => exportToExcel(true)}>Mit ZDA</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => exportToExcel(false)}>Ohne ZDA</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportToExcel(true)}>Mit ZA</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportToExcel(false)}>Ohne ZA</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -473,7 +453,7 @@ export default function HoursReport() {
                         <p className="text-2xl font-bold">{totalHours.toFixed(2)} h</p>
                       </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">ZDA</p>
+                        <p className="text-sm text-muted-foreground">ZA</p>
                         <p className={cn("text-2xl font-bold", totalDifference > 0 && "text-green-600", totalDifference < 0 && "text-destructive")}>
                           {totalDifference > 0 ? "+" : ""}{totalDifference.toFixed(2)} h
                         </p>
@@ -490,7 +470,7 @@ export default function HoursReport() {
                           <TableHead>Pause</TableHead>
                           <TableHead>Nachmittag</TableHead>
                           <TableHead className="text-right">Stunden</TableHead>
-                          <TableHead className="text-right">ZDA</TableHead>
+                          <TableHead className="text-right">ZA</TableHead>
                           <TableHead>Ort</TableHead>
                           <TableHead>Projekt</TableHead>
                           <TableHead>Tätigkeit</TableHead>
