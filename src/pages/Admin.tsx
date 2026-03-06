@@ -907,6 +907,68 @@ export default function Admin() {
           </Card>
         </section>
 
+        {/* ===== URLAUBSVERWALTUNG ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Calendar className="h-6 w-6" />
+            Urlaubsverwaltung
+          </h2>
+          <LeaveManagement profiles={profiles.filter(p => p.is_active)} />
+        </section>
+
+        {/* ===== ZEITKONTO ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Clock className="h-6 w-6" />
+            Zeitkonten & Zeitausgleich
+          </h2>
+          <TimeAccountManagement profiles={profiles.filter(p => p.is_active)} />
+        </section>
+
+        {/* ===== EINSTELLUNGEN SEKTION ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Settings className="h-6 w-6" />
+            Einstellungen
+          </h2>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>E-Mail-Einstellungen</CardTitle>
+              <CardDescription>
+                Konfigurieren Sie die E-Mail-Adressen für automatische Benachrichtigungen
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="disturbance-email">Regiebericht E-Mail-Empfänger</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="disturbance-email"
+                    type="email"
+                    placeholder="office@example.com"
+                    value={regiereportEmail}
+                    onChange={(e) => setRegiereportEmail(e.target.value)}
+                    disabled={loadingSettings}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={saveRegiereportEmail}
+                    disabled={savingSettings || loadingSettings}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {savingSettings ? "Speichert..." : "Speichern"}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Diese E-Mail-Adresse erhält alle Regieberichte als Kopie.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+
       {/* Employee Detail Dialog */}
       <Dialog open={!!selectedEmployee} onOpenChange={() => setSelectedEmployee(null)}>
         <DialogContent className="max-w-[95vw] sm:max-w-5xl max-h-[90vh]">
@@ -1353,68 +1415,6 @@ export default function Admin() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* ===== URLAUBSVERWALTUNG ===== */}
-      <section className="mt-8">
-        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Calendar className="h-6 w-6" />
-          Urlaubsverwaltung
-        </h2>
-        <LeaveManagement profiles={profiles.filter(p => p.is_active)} />
-      </section>
-
-      {/* ===== ZEITKONTO ===== */}
-      <section className="mt-8">
-        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Clock className="h-6 w-6" />
-          Zeitkonten & Zeitausgleich
-        </h2>
-        <TimeAccountManagement profiles={profiles.filter(p => p.is_active)} />
-      </section>
-
-      {/* ===== EINSTELLUNGEN SEKTION ===== */}
-      <section className="mt-8">
-        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Settings className="h-6 w-6" />
-          Einstellungen
-        </h2>
-        
-        <Card>
-          <CardHeader>
-            <CardTitle>E-Mail-Einstellungen</CardTitle>
-            <CardDescription>
-              Konfigurieren Sie die E-Mail-Adressen für automatische Benachrichtigungen
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="disturbance-email">Regiebericht E-Mail-Empfänger</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="disturbance-email"
-                  type="email"
-                  placeholder="office@example.com"
-                  value={regiereportEmail}
-                  onChange={(e) => setRegiereportEmail(e.target.value)}
-                  disabled={loadingSettings}
-                  className="flex-1"
-                />
-                <Button 
-                  onClick={saveRegiereportEmail} 
-                  disabled={savingSettings || loadingSettings}
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {savingSettings ? "Speichert..." : "Speichern"}
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Diese E-Mail-Adresse erhält alle Regieberichte als Kopie.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-      </main>
     </div>
   );
 }
