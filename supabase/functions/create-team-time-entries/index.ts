@@ -63,17 +63,16 @@ Deno.serve(async (req: Request) => {
     });
 
     // Verify user
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
-    
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+
+    if (userError || !user) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     // Create admin client with service role key to bypass RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -82,12 +81,13 @@ Deno.serve(async (req: Request) => {
     const { mainEntry, teamEntries, createWorkerLinks = true, skipMainEntry = false }: TeamTimeEntriesRequest = await req.json();
 
     // Check if caller is an administrator
-    const { data: callerProfile } = await supabaseAdmin
-      .from("profiles")
+    const { data: adminRole } = await supabaseAdmin
+      .from("user_roles")
       .select("role")
-      .eq("id", userId)
-      .single();
-    const isAdmin = callerProfile?.role === "administrator";
+      .eq("user_id", userId)
+      .eq("role", "administrator")
+      .maybeSingle();
+    const isAdmin = !!adminRole;
 
     // Validate that the main entry belongs to the authenticated user (admins can edit any user)
     if (!isAdmin && mainEntry.user_id !== userId) {
