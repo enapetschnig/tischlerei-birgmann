@@ -745,10 +745,7 @@ const TimeTracking = () => {
 
     const [sH, sM] = startTime.split(":").map(Number);
     const [eH, eM] = endTime.split(":").map(Number);
-    let totalMinutes = (eH * 60 + eM) - (sH * 60 + sM);
-    if (sH * 60 + sM < 780 && eH * 60 + eM > 720) {
-      totalMinutes -= Math.min(eH * 60 + eM, 780) - Math.max(sH * 60 + sM, 720);
-    }
+    const totalMinutes = (eH * 60 + eM) - (sH * 60 + sM);
     const stunden = totalMinutes / 60;
 
     const mainEntry = {
