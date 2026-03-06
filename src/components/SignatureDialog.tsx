@@ -193,9 +193,9 @@ export const SignatureDialog = ({
           title: "Regiebericht gesendet",
           description: "Der Bericht wurde erfolgreich per E-Mail versendet.",
         });
+        onSuccess();
       }
 
-      onSuccess();
       onOpenChange(false);
     } catch (error) {
       console.error("Error sending report:", error);

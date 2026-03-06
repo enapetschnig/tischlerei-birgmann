@@ -14,8 +14,6 @@ import { DisturbanceForm } from "@/components/DisturbanceForm";
 import { DisturbanceMaterials } from "@/components/DisturbanceMaterials";
 import { DisturbancePhotos } from "@/components/DisturbancePhotos";
 import { SignatureDialog } from "@/components/SignatureDialog";
-import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
-import { getNormalWorkingHours } from "@/lib/workingHours";
 
 type Disturbance = {
   id: string;
@@ -60,14 +58,6 @@ const DisturbanceDetail = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [autoOpenSignatureHandled, setAutoOpenSignatureHandled] = useState(false);
-  const [showFillHoursDialog, setShowFillHoursDialog] = useState(false);
-  const [fillHoursData, setFillHoursData] = useState<{
-    remainingHours: number;
-    bookedHours: number;
-    targetHours: number;
-    lastEndTime: string | null;
-    projects: { id: string; name: string; plz: string }[];
-  } | null>(null);
 
   useEffect(() => {
     checkAuthAndFetch();
@@ -204,135 +194,11 @@ const DisturbanceDetail = () => {
     fetchDisturbance();
   };
 
-  const handleSignatureSuccess = async () => {
+  const handleSignatureSuccess = () => {
     setShowSignatureDialog(false);
     fetchDisturbance();
-
-    // Check if there are remaining hours to fill today
-    if (!disturbance) return;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Get user's work model
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("wochenstunden")
-        .eq("id", user.id)
-        .single();
-      const wochenstunden = profile?.wochenstunden || 40;
-
-      const today = disturbance.datum;
-      const targetHours = getNormalWorkingHours(new Date(today), wochenstunden);
-      if (targetHours <= 0) return;
-
-      // Get all time entries for today
-      const { data: entries } = await supabase
-        .from("time_entries")
-        .select("stunden, start_time, end_time")
-        .eq("user_id", user.id)
-        .eq("datum", today);
-
-      const bookedHours = (entries || []).reduce((sum, e) => {
-        if (e.start_time && e.end_time) {
-          const [sH, sM] = e.start_time.split(":").map(Number);
-          const [eH, eM] = e.end_time.split(":").map(Number);
-          let mins = (eH * 60 + eM) - (sH * 60 + sM);
-          // Lunch break deduction
-          const startMins = sH * 60 + sM;
-          const endMins = eH * 60 + eM;
-          if (startMins < 780 && endMins > 720) {
-            mins -= Math.min(endMins, 780) - Math.max(startMins, 720);
-          }
-          return sum + mins / 60;
-        }
-        return sum + (e.stunden || 0);
-      }, 0);
-
-      const remainingHours = targetHours - bookedHours;
-      if (remainingHours <= 0.1) return;
-
-      // Get last end time
-      const lastEndTime = (entries || []).reduce<string | null>((latest, e) => {
-        if (!e.end_time) return latest;
-        if (!latest || e.end_time > latest) return e.end_time;
-        return latest;
-      }, null);
-
-      // Fetch projects
-      const { data: projects } = await supabase
-        .from("projects")
-        .select("id, name, plz")
-        .eq("is_active", true)
-        .order("name");
-
-      setFillHoursData({
-        remainingHours,
-        bookedHours,
-        targetHours,
-        lastEndTime,
-        projects: projects || [],
-      });
-      setShowFillHoursDialog(true);
-    } catch (error) {
-      console.error("Error checking remaining hours:", error);
-    }
   };
 
-  const handleFillHoursSubmit = async (
-    projectId: string | null,
-    locationType: string,
-    description: string,
-    startTime: string,
-    endTime: string
-  ) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !disturbance) return;
-
-    const [sH, sM] = startTime.split(":").map(Number);
-    const [eH, eM] = endTime.split(":").map(Number);
-    let totalMinutes = (eH * 60 + eM) - (sH * 60 + sM);
-    // Lunch break
-    if (sH * 60 + sM < 780 && eH * 60 + eM > 720) {
-      totalMinutes -= Math.min(eH * 60 + eM, 780) - Math.max(sH * 60 + sM, 720);
-    }
-    const stunden = totalMinutes / 60;
-
-    const mainEntry = {
-      user_id: user.id,
-      datum: disturbance.datum,
-      project_id: projectId,
-      taetigkeit: "Arbeit",
-      stunden,
-      start_time: startTime,
-      end_time: endTime,
-      pause_minutes: 0,
-      pause_start: null,
-      pause_end: null,
-      location_type: locationType,
-      notizen: description || null,
-      week_type: null,
-    };
-
-    const { data: result, error } = await supabase.functions.invoke(
-      "create-team-time-entries",
-      { body: { mainEntry, teamEntries: [], createWorkerLinks: false } }
-    );
-
-    if (error || !result?.success) {
-      toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: "Reststunden konnten nicht gebucht werden",
-      });
-      return;
-    }
-
-    toast({
-      title: "Reststunden gebucht",
-      description: `${stunden.toFixed(2)} h wurden erfolgreich gebucht`,
-    });
-  };
 
   const getStatusBadge = (status: string, isVerrechnet?: boolean) => {
     if (isVerrechnet) {
@@ -647,19 +513,6 @@ const DisturbanceDetail = () => {
         onSuccess={handleSignatureSuccess}
       />
 
-      {/* Fill Remaining Hours Dialog */}
-      {fillHoursData && (
-        <FillRemainingHoursDialog
-          open={showFillHoursDialog}
-          onOpenChange={setShowFillHoursDialog}
-          remainingHours={fillHoursData.remainingHours}
-          bookedHours={fillHoursData.bookedHours}
-          targetHours={fillHoursData.targetHours}
-          projects={fillHoursData.projects}
-          lastEndTime={fillHoursData.lastEndTime}
-          onSubmit={handleFillHoursSubmit}
-        />
-      )}
     </div>
   );
 };
