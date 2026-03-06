@@ -359,6 +359,9 @@ export default function Index() {
                             {a.vehicles?.name && (
                               <span className="text-xs text-muted-foreground">({a.vehicles.name})</span>
                             )}
+                            {a.notes && (
+                              <span className="text-xs text-muted-foreground italic">{a.notes}</span>
+                            )}
                           </div>
                         ))}
                       </div>

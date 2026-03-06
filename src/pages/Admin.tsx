@@ -1029,6 +1029,23 @@ export default function Admin() {
                           onChange={(e) => setFormData({ ...formData, geburtsdatum: e.target.value })}
                         />
                       </div>
+                      <div className="sm:col-span-2">
+                        <Label>Arbeitszeitmodell</Label>
+                        <Select
+                          value={String(formData.wochenstunden ?? 40)}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
+                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
+                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
 
@@ -1083,45 +1100,12 @@ export default function Admin() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Beschäftigung</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="sm:col-span-2">
-                        <Label>Arbeitszeitmodell</Label>
-                        <Select
-                          value={String(formData.wochenstunden ?? 40)}
-                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
-                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
-                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
-                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
                       <div>
                         <Label>Position</Label>
                         <Input
                           value={formData.position || ""}
                           onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                         />
-                      </div>
-                      <div>
-                        <Label>Beschäftigungsart</Label>
-                        <Select
-                          value={formData.beschaeftigung_art || ""}
-                          onValueChange={(val) => setFormData({ ...formData, beschaeftigung_art: val })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Wählen..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="vollzeit">Vollzeit</SelectItem>
-                            <SelectItem value="teilzeit">Teilzeit</SelectItem>
-                            <SelectItem value="geringfuegig">Geringfügig</SelectItem>
-                          </SelectContent>
-                        </Select>
                       </div>
                       <div>
                         <Label>Eintrittsdatum</Label>
