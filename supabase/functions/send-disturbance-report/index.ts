@@ -1,10 +1,25 @@
-import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "npm:pdf-lib@1.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// jsPDF is loaded dynamically inside generatePDF to avoid module-load failures in Deno
+
+// Supabase Admin Client for reading settings
+const supabaseAdmin = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 interface Material {
   id: string;
@@ -43,20 +58,6 @@ interface ReportRequest {
   photos?: Photo[];
 }
 
-// A4 dimensions in points (1 point = 1/72 inch)
-const A4_WIDTH = 595.28;
-const A4_HEIGHT = 841.89;
-const MARGIN = 56.69; // ~20mm
-const CONTENT_WIDTH = A4_WIDTH - 2 * MARGIN;
-
-// Colors
-const BRAND_COLOR = rgb(140 / 255, 56 / 255, 16 / 255);
-const GRAY = rgb(100 / 255, 100 / 255, 100 / 255);
-const LIGHT_GRAY = rgb(150 / 255, 150 / 255, 150 / 255);
-const BLACK = rgb(0, 0, 0);
-const TABLE_BG = rgb(240 / 255, 240 / 255, 240 / 255);
-const TABLE_BORDER = rgb(200 / 255, 200 / 255, 200 / 255);
-
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString("de-AT", {
@@ -76,7 +77,7 @@ function formatDateShort(dateStr: string): string {
   });
 }
 
-async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
+async function fetchImageAsBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -84,372 +85,330 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; type: 
       return null;
     }
     const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    const base64 = btoa(binary);
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    return { bytes: new Uint8Array(arrayBuffer), type: contentType };
+    return `data:${contentType};base64,${base64}`;
   } catch (error) {
     console.error("Error fetching image:", error);
     return null;
   }
 }
 
-function dataUriToBytes(dataUri: string): { bytes: Uint8Array; type: string } {
-  const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) throw new Error("Invalid data URI");
-  const type = match[1];
-  const b64 = match[2];
-  const binaryStr = atob(b64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-  return { bytes, type };
-}
-
-// Helper to wrap text into lines that fit within maxWidth
-function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  const paragraphs = text.split("\n");
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.trim() === "") {
-      lines.push("");
-      continue;
-    }
-
-    const words = paragraph.split(" ");
-    let currentLine = "";
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const testWidth = font.widthOfTextAtSize(testLine, fontSize);
-
-      if (testWidth > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) {
-      lines.push(currentLine);
-    }
-  }
-
-  return lines;
-}
-
-async function generatePDF(
-  data: ReportRequest & { technicians: string[] },
-  photoImages: ({ bytes: Uint8Array; type: string } | null)[]
-): Promise<Uint8Array> {
+async function generatePDF(data: ReportRequest & { technicians: string[] }, photoImages: (string | null)[]): Promise<string> {
   const { disturbance, materials, technicians, photos } = data;
 
-  const doc = await PDFDocument.create();
-  const helvetica = await doc.embedFont(StandardFonts.Helvetica);
-  const helveticaBold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const helveticaOblique = await doc.embedFont(StandardFonts.HelveticaOblique);
+  // Dynamic import — avoids module-level crash in Deno Edge Functions
+  const { jsPDF } = await import("https://esm.sh/jspdf@2.5.2");
 
-  let page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-  let yPos = A4_HEIGHT - MARGIN; // pdf-lib: y=0 is bottom
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const cW = pageW - 2 * margin;
 
-  // Helper: check if we need a new page
-  const ensureSpace = (needed: number) => {
-    if (yPos - needed < MARGIN) {
-      page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-      yPos = A4_HEIGHT - MARGIN;
-    }
-  };
+  // Tischlerei Birgmann colour palette
+  const BLACK = { r: 50, g: 50, b: 50 };
+  const GRAY  = { r: 130, g: 130, b: 130 };
+  const LGRAY = { r: 245, g: 245, b: 245 };
+  const WHITE = { r: 255, g: 255, b: 255 };
+  const BRAND = { r: 140, g: 56, b: 16 };  // Tischlerei orange/brown
 
-  // --- HEADER ---
+  let y = 0;
 
-  // Try loading logo
+  const setTxt  = (c: {r:number,g:number,b:number}) => doc.setTextColor(c.r, c.g, c.b);
+  const setFill = (c: {r:number,g:number,b:number}) => doc.setFillColor(c.r, c.g, c.b);
+  const setDraw = (c: {r:number,g:number,b:number}) => doc.setDrawColor(c.r, c.g, c.b);
+
+  function sectionHeader(title: string) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    setTxt(BRAND);
+    doc.text(title, margin, y);
+    setDraw({ r: 200, g: 180, b: 160 });
+    doc.setLineWidth(0.3);
+    doc.line(margin, y + 1.5, margin + cW, y + 1.5);
+    y += 7;
+  }
+
+  function fieldLabel(label: string, xPos = margin) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    setTxt(GRAY);
+    doc.text(label.toUpperCase(), xPos, y);
+  }
+
+  function fieldValue(val: string, xPos = margin, maxW = cW): number {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    setTxt(BLACK);
+    const lines = doc.splitTextToSize(val, maxW);
+    doc.text(lines, xPos, y + 4);
+    return lines.length;
+  }
+
+  function checkPage(needed = 35) {
+    if (y + needed > pageH - 18) { doc.addPage(); y = 20; }
+  }
+
+  // ── HEADER ──
+  setFill(BRAND);
+  doc.rect(0, 0, pageW, 1.5, "F");
+
+  // Logo
   let logoLoaded = false;
   try {
-    const logoResponse = await fetch("https://www.birgmann.app/birgmann-logo.png");
-    if (logoResponse.ok) {
-      const logoBuffer = await logoResponse.arrayBuffer();
-      const logoImage = await doc.embedPng(new Uint8Array(logoBuffer));
-      const logoDims = logoImage.scaleToFit(113, 42); // ~40mm x 15mm
-      page.drawImage(logoImage, {
-        x: MARGIN,
-        y: yPos - logoDims.height,
-        width: logoDims.width,
-        height: logoDims.height,
-      });
-
-      // Company name next to logo
-      page.drawText("TISCHLEREI BIRGMANN", {
-        x: MARGIN + logoDims.width + 14,
-        y: yPos - 20,
-        size: 20,
-        font: helveticaBold,
-        color: BRAND_COLOR,
-      });
-      yPos -= Math.max(logoDims.height, 28) + 8;
+    const logoRes = await fetch("https://www.birgmann.app/birgmann-logo.png");
+    if (logoRes.ok) {
+      const buf = await logoRes.arrayBuffer();
+      const u8 = new Uint8Array(buf);
+      let bin = "";
+      for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      doc.addImage(`data:image/png;base64,${btoa(bin)}`, "PNG", margin, 5, 55, 25);
       logoLoaded = true;
     }
-  } catch (e) {
-    console.error("Could not load logo:", e);
-  }
+  } catch (_) { /* optional */ }
 
   if (!logoLoaded) {
-    page.drawText("TISCHLEREI BIRGMANN", {
-      x: MARGIN,
-      y: yPos,
-      size: 24,
-      font: helveticaBold,
-      color: BRAND_COLOR,
-    });
-    yPos -= 28;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    setTxt(BRAND);
+    doc.text("TISCHLEREI BIRGMANN", margin, 20);
   }
 
-  // Divider line
-  page.drawLine({
-    start: { x: MARGIN, y: yPos },
-    end: { x: MARGIN + CONTENT_WIDTH, y: yPos },
-    thickness: 1,
-    color: BRAND_COLOR,
-  });
-  yPos -= 18;
+  // Title block (right side)
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  setTxt(BRAND);
+  doc.text("REGIEBERICHT", pageW - margin, 14, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  setTxt(GRAY);
+  doc.text(formatDate(disturbance.datum), pageW - margin, 21, { align: "right" });
 
-  // Subtitle
-  page.drawText("Regiebericht", {
-    x: MARGIN,
-    y: yPos,
-    size: 16,
-    font: helveticaBold,
-    color: GRAY,
-  });
-  yPos -= 28;
+  // Separator line below header
+  setDraw({ r: 200, g: 200, b: 200 });
+  doc.setLineWidth(0.2);
+  doc.line(margin, 33, margin + cW, 33);
 
-  // --- KUNDENDATEN ---
-  page.drawText("Kundendaten", {
-    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-  });
-  yPos -= 18;
+  y = 42;
 
-  const drawInfoLine = (text: string) => {
-    page.drawText(text, {
-      x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
-    });
-    yPos -= 14;
-  };
+  const col2x = margin + cW / 2 + 3;
+  const colW = cW / 2 - 5;
 
-  drawInfoLine(`Name: ${disturbance.kunde_name}`);
-  if (disturbance.kunde_adresse) drawInfoLine(`Adresse: ${disturbance.kunde_adresse}`);
-  if (disturbance.kunde_telefon) drawInfoLine(`Telefon: ${disturbance.kunde_telefon}`);
-  if (disturbance.kunde_email) drawInfoLine(`E-Mail: ${disturbance.kunde_email}`);
+  // ── KUNDENDATEN ──
+  sectionHeader("Kundendaten");
 
-  yPos -= 14;
+  fieldLabel("Name");
+  const nameLines = fieldValue(disturbance.kunde_name, margin, colW);
+  if (disturbance.kunde_adresse) {
+    fieldLabel("Adresse", col2x);
+    fieldValue(disturbance.kunde_adresse, col2x, colW);
+  }
+  y += nameLines * 4.5 + 4;
 
-  // --- EINSATZDATEN ---
-  ensureSpace(100);
-  page.drawText("Einsatzdaten", {
-    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-  });
-  yPos -= 18;
+  if (disturbance.kunde_telefon || disturbance.kunde_email) {
+    if (disturbance.kunde_telefon) { fieldLabel("Telefon"); fieldValue(disturbance.kunde_telefon, margin, colW); }
+    if (disturbance.kunde_email) { fieldLabel("E-Mail", col2x); fieldValue(disturbance.kunde_email, col2x, colW); }
+    y += 9;
+  }
+  y += 5;
 
-  drawInfoLine(`Datum: ${formatDate(disturbance.datum)}`);
+  // ── EINSATZDATEN ──
+  checkPage(45);
+  sectionHeader("Einsatzdaten");
 
-  const startTime = disturbance.start_time.slice(0, 5);
-  const endTime = disturbance.end_time.slice(0, 5);
-  drawInfoLine(`Arbeitszeit: ${startTime} - ${endTime} Uhr`);
+  const st = disturbance.start_time.slice(0, 5);
+  const et = disturbance.end_time.slice(0, 5);
+
+  fieldLabel("Datum");
+  fieldValue(formatDate(disturbance.datum), margin, colW);
+  fieldLabel("Arbeitszeit", col2x);
+  fieldValue(`${st} – ${et} Uhr`, col2x, colW);
+  y += 9;
 
   if (disturbance.pause_minutes > 0) {
-    drawInfoLine(`Pause: ${disturbance.pause_minutes} Minuten`);
+    fieldLabel("Pause");
+    fieldValue(`${disturbance.pause_minutes} Minuten`, margin, colW);
+    y += 9;
   }
 
-  page.drawText(`Gesamtstunden: ${disturbance.stunden.toFixed(2)} Stunden`, {
-    x: MARGIN, y: yPos, size: 10, font: helveticaBold, color: BLACK,
-  });
-  yPos -= 14;
+  // Hours box
+  y += 4;
+  const boxY = y;
+  const boxH = 18;
+  setFill({ r: 250, g: 240, b: 230 }); // very light warm tint
+  setDraw(BRAND);
+  doc.setLineWidth(0.6);
+  doc.roundedRect(col2x - 2, boxY, colW + 2, boxH, 2, 2, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  setTxt(GRAY);
+  doc.text("GESAMTSTUNDEN", col2x + 2, boxY + 6);
+  doc.setFontSize(14);
+  setTxt(BLACK);
+  doc.text(`${disturbance.stunden.toFixed(2)} h`, col2x + 2, boxY + 14);
+  y = boxY + boxH + 4;
 
-  // Technicians
-  if (technicians.length === 1) {
-    drawInfoLine(`Techniker: ${technicians[0]}`);
-  } else if (technicians.length > 1) {
-    drawInfoLine("Techniker:");
-    technicians.forEach((name) => {
-      drawInfoLine(`  - ${name}`);
-    });
-  }
+  fieldLabel("Mitarbeiter");
+  fieldValue(technicians.join(", "), margin, cW);
+  y += 10;
 
-  yPos -= 10;
+  // ── DURCHGEFÜHRTE ARBEITEN ──
+  checkPage(40);
+  sectionHeader("Durchgeführte Arbeiten");
 
-  // --- DURCHGEFÜHRTE ARBEITEN ---
-  ensureSpace(60);
-  page.drawText("Durchgeführte Arbeiten", {
-    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-  });
-  yPos -= 18;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  setTxt(BLACK);
+  const bLines = doc.splitTextToSize(disturbance.beschreibung, cW - 4);
+  const bH = bLines.length * 4.8 + 6;
+  setFill(LGRAY);
+  setDraw({ r: 180, g: 180, b: 180 });
+  doc.setLineWidth(0.2);
+  doc.rect(margin, y - 2, cW, bH, "FD");
+  doc.text(bLines, margin + 3, y + 2.5);
+  y += bH + 5;
 
-  const beschreibungLines = wrapText(disturbance.beschreibung, helvetica, 10, CONTENT_WIDTH);
-  for (const line of beschreibungLines) {
-    ensureSpace(14);
-    if (line) {
-      page.drawText(line, {
-        x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
-      });
-    }
-    yPos -= 14;
-  }
-
-  // --- NOTIZEN ---
   if (disturbance.notizen) {
-    yPos -= 6;
-    ensureSpace(40);
-    page.drawText("Notizen", {
-      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-    });
-    yPos -= 18;
-
-    const notizenLines = wrapText(disturbance.notizen, helvetica, 10, CONTENT_WIDTH);
-    for (const line of notizenLines) {
-      ensureSpace(14);
-      if (line) {
-        page.drawText(line, {
-          x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
-        });
-      }
-      yPos -= 14;
-    }
+    checkPage(20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    setTxt(GRAY);
+    doc.text("NOTIZEN", margin, y);
+    y += 4;
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    setTxt({ r: 60, g: 60, b: 60 });
+    const nLines = doc.splitTextToSize(disturbance.notizen, cW);
+    doc.text(nLines, margin, y);
+    y += nLines.length * 4.8 + 6;
   }
 
-  yPos -= 10;
-
-  // --- MATERIALIEN ---
+  // ── MATERIALIEN ──
   if (materials && materials.length > 0) {
-    ensureSpace(60);
-    page.drawText("Verwendetes Material", {
-      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+    checkPage(30);
+    y += 4;
+    sectionHeader("Verwendete Materialien");
+
+    const c1 = cW * 0.45;
+    const c2 = cW * 0.2;
+    const c3 = cW * 0.35;
+
+    // Table header row
+    setFill(LGRAY);
+    doc.rect(margin, y - 3, cW, 7, "F");
+    setDraw({ r: 160, g: 160, b: 160 });
+    doc.setLineWidth(0.2);
+    doc.rect(margin, y - 3, cW, 7, "S");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    setTxt(BLACK);
+    doc.text("Material", margin + 2, y + 1);
+    doc.text("Menge", margin + c1 + 2, y + 1);
+    doc.text("Notizen", margin + c1 + c2 + 2, y + 1);
+    y += 7;
+
+    materials.forEach((mat) => {
+      checkPage(8);
+      setDraw({ r: 200, g: 200, b: 200 });
+      doc.setLineWidth(0.1);
+      doc.line(margin, y + 4, margin + cW, y + 4);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      setTxt(BLACK);
+      doc.text(doc.splitTextToSize(mat.material || "-", c1 - 4), margin + 2, y);
+      doc.text(mat.menge || "-", margin + c1 + 2, y);
+      doc.text(doc.splitTextToSize(mat.notizen || "-", c3 - 4), margin + c1 + c2 + 2, y);
+      y += 7;
     });
-    yPos -= 18;
 
-    // Table header background
-    page.drawRectangle({
-      x: MARGIN,
-      y: yPos - 4,
-      width: CONTENT_WIDTH,
-      height: 18,
-      color: TABLE_BG,
-    });
-
-    page.drawText("Material", { x: MARGIN + 6, y: yPos, size: 9, font: helveticaBold, color: BLACK });
-    page.drawText("Menge", { x: MARGIN + 255, y: yPos, size: 9, font: helveticaBold, color: BLACK });
-    page.drawText("Notizen", { x: MARGIN + 340, y: yPos, size: 9, font: helveticaBold, color: BLACK });
-    yPos -= 20;
-
-    for (const mat of materials) {
-      ensureSpace(20);
-
-      // Row border
-      page.drawLine({
-        start: { x: MARGIN, y: yPos + 12 },
-        end: { x: MARGIN + CONTENT_WIDTH, y: yPos + 12 },
-        thickness: 0.5,
-        color: TABLE_BORDER,
-      });
-
-      page.drawText(mat.material || "-", { x: MARGIN + 6, y: yPos, size: 9, font: helvetica, color: BLACK });
-      page.drawText(mat.menge || "-", { x: MARGIN + 255, y: yPos, size: 9, font: helvetica, color: BLACK });
-      page.drawText(mat.notizen || "-", { x: MARGIN + 340, y: yPos, size: 9, font: helvetica, color: BLACK });
-      yPos -= 18;
-    }
-
-    yPos -= 10;
+    setDraw({ r: 160, g: 160, b: 160 });
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, margin + cW, y);
+    y += 6;
   }
 
-  // --- FOTOS ---
+  // ── FOTOS ──
   if (photos && photos.length > 0 && photoImages.some(img => img !== null)) {
-    page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-    yPos = A4_HEIGHT - MARGIN;
+    doc.addPage();
+    y = 20;
+    sectionHeader("Fotos");
 
-    page.drawText("Fotos", {
-      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-    });
-    yPos -= 24;
+    const imgW = (cW - 5) / 2;
+    const imgH = imgW * 0.75;
+    let col = 0;
 
     for (let i = 0; i < photos.length; i++) {
-      const imgData = photoImages[i];
-      if (!imgData) continue;
-
-      ensureSpace(200);
-
+      const imageData = photoImages[i];
+      if (!imageData) continue;
+      if (col === 2) { col = 0; y += imgH + 12; checkPage(imgH + 15); }
+      const xImg = margin + col * (imgW + 5);
       try {
-        const image = imgData.type.includes("png")
-          ? await doc.embedPng(imgData.bytes)
-          : await doc.embedJpg(imgData.bytes);
-
-        const dims = image.scaleToFit(227, 170); // ~80mm x 60mm
-        page.drawImage(image, {
-          x: MARGIN,
-          y: yPos - dims.height,
-          width: dims.width,
-          height: dims.height,
-        });
-        yPos -= dims.height + 4;
-
-        // Filename
-        page.drawText(photos[i].file_name, {
-          x: MARGIN, y: yPos, size: 8, font: helvetica, color: GRAY,
-        });
-        yPos -= 20;
-      } catch (e) {
-        console.error("Error adding photo to PDF:", e);
-      }
+        doc.addImage(imageData, "JPEG", xImg, y, imgW, imgH);
+        setDraw({ r: 180, g: 180, b: 180 });
+        doc.setLineWidth(0.2);
+        doc.rect(xImg, y, imgW, imgH, "S");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        setTxt(GRAY);
+        const fn = photos[i].file_name.length > 30 ? photos[i].file_name.slice(0, 28) + "…" : photos[i].file_name;
+        doc.text(fn, xImg, y + imgH + 4);
+      } catch (_) { /* skip */ }
+      col++;
     }
+    y += imgH + 14;
   }
 
-  // --- UNTERSCHRIFT ---
-  ensureSpace(120);
+  // ── UNTERSCHRIFT ──
+  checkPage(65);
+  y += 6;
+  sectionHeader("Kundenunterschrift");
 
-  page.drawText("Kundenunterschrift", {
-    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
-  });
-  yPos -= 10;
+  setFill(WHITE);
+  setDraw({ r: 190, g: 190, b: 190 });
+  doc.setLineWidth(0.2);
+  doc.rect(margin, y - 2, cW, 38, "FD");
 
   if (disturbance.unterschrift_kunde) {
     try {
-      const sigData = dataUriToBytes(disturbance.unterschrift_kunde);
-      const sigImage = sigData.type.includes("png")
-        ? await doc.embedPng(sigData.bytes)
-        : await doc.embedJpg(sigData.bytes);
-
-      const sigDims = sigImage.scaleToFit(170, 71); // ~60mm x 25mm
-      page.drawImage(sigImage, {
-        x: MARGIN,
-        y: yPos - sigDims.height,
-        width: sigDims.width,
-        height: sigDims.height,
-      });
-      yPos -= sigDims.height + 8;
-    } catch (e) {
-      console.error("Error adding signature:", e);
-      page.drawText("[Unterschrift konnte nicht geladen werden]", {
-        x: MARGIN, y: yPos - 14, size: 10, font: helveticaOblique, color: GRAY,
-      });
-      yPos -= 28;
+      doc.addImage(disturbance.unterschrift_kunde, "PNG", margin + 2, y, cW - 4, 33);
+    } catch (_) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      setTxt(GRAY);
+      doc.text("[Unterschrift vorhanden]", margin + 5, y + 16);
     }
   }
+  y += 42;
 
-  // Confirmation text
-  const confirmText = "Der Kunde bestaetigt mit seiner Unterschrift die ordnungsgemaesse Durchfuehrung der oben genannten Arbeiten.";
-  const confirmLines = wrapText(confirmText, helvetica, 9, CONTENT_WIDTH);
-  for (const line of confirmLines) {
-    page.drawText(line, {
-      x: MARGIN, y: yPos, size: 9, font: helvetica, color: GRAY,
-    });
-    yPos -= 12;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  setTxt(GRAY);
+  doc.text(`Datum: ${new Date().toLocaleDateString("de-AT")}`, margin, y);
+  y += 5;
+  const confirmText = "Der Kunde bestätigt mit seiner Unterschrift die ordnungsgemäße Durchführung der oben angeführten Arbeiten.";
+  doc.text(doc.splitTextToSize(confirmText, cW), margin, y);
+
+  // ── FOOTER ──
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    setDraw({ r: 210, g: 210, b: 210 });
+    doc.setLineWidth(0.2);
+    doc.line(margin, pageH - 12, margin + cW, pageH - 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    setTxt({ r: 150, g: 150, b: 150 });
+    doc.text(`Tischlerei Birgmann  |  Erstellt am: ${new Date().toLocaleDateString("de-AT")}`, margin, pageH - 7);
+    doc.text(`Seite ${p} / ${totalPages}`, pageW - margin, pageH - 7, { align: "right" });
   }
 
-  // Footer on last page
-  const footerY = MARGIN - 20;
-  page.drawText(
-    `Erstellt am: ${new Date().toLocaleDateString("de-AT")} | Tischlerei Birgmann`,
-    { x: MARGIN, y: Math.max(footerY, 20), size: 8, font: helvetica, color: LIGHT_GRAY }
-  );
-
-  return await doc.save();
+  return doc.output("datauristring").split(",")[1];
 }
 
 function generateEmailHtml(data: ReportRequest & { technicians: string[] }): string {
@@ -475,12 +434,12 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
 
         <p>Sehr geehrte Damen und Herren,</p>
 
-        <p>im Anhang finden Sie den Regiebericht f&uuml;r den Einsatz bei <strong>${disturbance.kunde_name}</strong> vom <strong>${formatDate(disturbance.datum)}</strong>.</p>
+        <p>im Anhang finden Sie den Regiebericht f&uuml;r den Einsatz bei <strong>${escapeHtml(disturbance.kunde_name)}</strong> vom <strong>${formatDate(disturbance.datum)}</strong>.</p>
 
         <div class="info-box">
           <strong>Zusammenfassung:</strong><br>
-          Techniker: ${technicianDisplay}<br>
-          Arbeitszeit: ${disturbance.start_time.slice(0, 5)} - ${disturbance.end_time.slice(0, 5)} Uhr<br>
+          Techniker: ${escapeHtml(technicianDisplay)}<br>
+          Arbeitszeit: ${escapeHtml(disturbance.start_time.slice(0, 5))} - ${escapeHtml(disturbance.end_time.slice(0, 5))} Uhr<br>
           Gesamtstunden: ${disturbance.stunden.toFixed(2)} h
         </div>
 
@@ -494,20 +453,20 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
   `;
 }
 
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    const apiKey = Deno.env.get("RESEND_API_KEY");
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: "RESEND_API_KEY is not set in Supabase secrets" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const { disturbance, materials, technicianNames, technicianName, photos }: ReportRequest = await req.json();
 
     // Backward compatibility + fallback
@@ -523,38 +482,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     console.log("Generating PDF for disturbance:", disturbance.id);
 
-    // Fetch photo images from storage as raw bytes
+    // Fetch photo images from storage
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const photoImages: ({ bytes: Uint8Array; type: string } | null)[] = [];
+    const photoImages: (string | null)[] = [];
     if (photos && photos.length > 0) {
       console.log(`Fetching ${photos.length} photos...`);
       for (const photo of photos) {
         const photoUrl = `${supabaseUrl}/storage/v1/object/public/disturbance-photos/${photo.file_path}`;
-        const imageData = await fetchImageBytes(photoUrl);
+        const imageData = await fetchImageAsBase64(photoUrl);
         photoImages.push(imageData);
       }
     }
 
-    // Generate PDF
-    let pdfBytes: Uint8Array;
+    // Generate PDF (with fallback if generation fails)
+    let pdfBase64: string | null = null;
     try {
-      pdfBytes = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
+      pdfBase64 = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
+      console.log("PDF generated successfully");
     } catch (pdfError) {
-      console.error("PDF generation failed:", pdfError);
-      throw new Error(`PDF-Erstellung fehlgeschlagen: ${pdfError instanceof Error ? pdfError.message : "Unbekannter Fehler"}`);
+      console.error("PDF generation failed, sending email without PDF:", pdfError instanceof Error ? pdfError.message : String(pdfError));
     }
-
-    const pdfBase64 = uint8ArrayToBase64(pdfBytes);
-    console.log("PDF generated, size:", pdfBytes.length, "bytes");
 
     // Generate simple email HTML
     const emailHtml = generateEmailHtml({ disturbance, materials, technicians });
 
     // Fetch office email from settings with fallback
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
     const { data: setting } = await supabaseAdmin
       .from("app_settings")
       .select("value")
@@ -570,7 +522,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (disturbance.kunde_email) recipients.push(disturbance.kunde_email);
 
     if (recipients.length === 0) {
-      throw new Error("Keine Empfaenger-E-Mail-Adresse vorhanden. Bitte Kunden-E-Mail oder Buero-E-Mail in den Einstellungen hinterlegen.");
+      return new Response(
+        JSON.stringify({ error: "Keine Empfaenger-E-Mail-Adresse vorhanden. Bitte Kunden-E-Mail oder Buero-E-Mail in den Einstellungen hinterlegen." }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     // Create filename
@@ -580,41 +535,48 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const subject = `Regiebericht - ${disturbance.kunde_name} - ${formatDateShort(disturbance.datum)}`;
 
-    console.log("Sending email with PDF attachment to:", recipients);
+    console.log("Sending email to:", recipients, "| PDF attached:", pdfBase64 !== null);
 
-    // Send email via Resend REST API
-    const apiKey = Deno.env.get("RESEND_API_KEY")!;
+    const emailPayload: {
+      from: string;
+      to: string[];
+      subject: string;
+      html: string;
+      attachments?: { filename: string; content: string }[];
+    } = {
+      from: "Tischlerei Birgmann <noreply@chrisnapetschnig.at>",
+      to: recipients,
+      subject: subject,
+      html: emailHtml,
+    };
+
+    if (pdfBase64) {
+      emailPayload.attachments = [{ filename: pdfFilename, content: pdfBase64 }];
+    }
+
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: "Tischlerei Birgmann <noreply@chrisnapetschnig.at>",
-        to: recipients,
-        subject: subject,
-        html: emailHtml,
-        attachments: [
-          {
-            filename: pdfFilename,
-            content: pdfBase64,
-          },
-        ],
-      }),
+      body: JSON.stringify(emailPayload),
     });
 
+    const resendData = await resendResponse.json();
+
     if (!resendResponse.ok) {
-      const errorBody = await resendResponse.text();
-      console.error("Resend API error:", resendResponse.status, errorBody);
-      throw new Error(`E-Mail-Versand fehlgeschlagen (${resendResponse.status}): ${errorBody}`);
+      console.error("Resend API error:", resendData);
+      return new Response(
+        JSON.stringify({ error: `E-Mail Fehler: ${resendData?.message || resendData?.name || JSON.stringify(resendData)}` }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
-    const emailResponse = await resendResponse.json();
-    console.log("Email sent successfully:", emailResponse);
+    console.log("Email sent successfully:", resendData);
 
     return new Response(
-      JSON.stringify({ success: true, emailResponse }),
+      JSON.stringify({ success: true, emailId: resendData?.id }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (error: unknown) {
