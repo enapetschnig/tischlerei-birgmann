@@ -1,12 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "npm:pdf-lib@1.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Supabase Admin Client for reading settings
-const supabaseAdmin = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-);
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -557,6 +551,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const emailHtml = generateEmailHtml({ disturbance, materials, technicians });
 
     // Fetch office email from settings with fallback
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
     const { data: setting } = await supabaseAdmin
       .from("app_settings")
       .select("value")
