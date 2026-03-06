@@ -240,28 +240,14 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
         location_type: "baustelle",
       };
 
-      // Prepare team entries for additional workers
-      const teamEntries = selectedEmployees.map(workerId => ({
-        user_id: workerId,
-        datum: formData.datum,
-        start_time: formData.startTime,
-        end_time: formData.endTime,
-        pause_minutes: formData.pauseMinutes,
-        stunden,
-        project_id: null,
-        disturbance_id: newDisturbance.id,
-        taetigkeit: `Regiebericht: ${formData.kundeName.trim()}`,
-        location_type: "baustelle",
-      }));
-
-      // Call Edge Function to create time entries (bypasses RLS for team members)
+      // Create time entry only for the main user (additional workers only appear on the PDF)
       const { data: timeResult, error: timeError } = await supabase.functions.invoke(
         "create-team-time-entries",
         {
           body: {
             mainEntry,
-            teamEntries,
-            createWorkerLinks: false, // Disturbances use disturbance_workers instead
+            teamEntries: [],
+            createWorkerLinks: false,
           },
         }
       );
@@ -360,64 +346,13 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
         .eq("user_id", workerId);
     }
 
-    // Add new workers via Edge Function (bypasses RLS)
-    if (toAdd.length > 0) {
-      const stunden = calculateHours();
-      
-      // Get current user for main entry validation
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) return;
-
-      // Create time entries for new workers via Edge Function
-      // Use skipMainEntry=true since the main user already has their entry
-      const teamEntries = toAdd.map(workerId => ({
-        user_id: workerId,
-        datum: formData.datum,
-        start_time: formData.startTime,
-        end_time: formData.endTime,
-        pause_minutes: formData.pauseMinutes,
-        stunden,
-        project_id: null,
+    // Add new workers (only disturbance_workers, no time entries)
+    for (const workerId of toAdd) {
+      await supabase.from("disturbance_workers").insert({
         disturbance_id: disturbanceId,
-        taetigkeit: `Regiebericht: ${formData.kundeName.trim()}`,
-        location_type: "baustelle",
-      }));
-
-      const { error: timeError } = await supabase.functions.invoke(
-        "create-team-time-entries",
-        {
-          body: {
-            mainEntry: {
-              user_id: currentUser.id,
-              datum: formData.datum,
-              start_time: formData.startTime,
-              end_time: formData.endTime,
-              pause_minutes: formData.pauseMinutes,
-              stunden,
-            project_id: null,
-            disturbance_id: disturbanceId,
-            taetigkeit: `Regiebericht: ${formData.kundeName.trim()}`,
-            location_type: "baustelle",
-          },
-          teamEntries,
-            createWorkerLinks: false,
-            skipMainEntry: true, // Don't create duplicate main entry
-          },
-        }
-      );
-
-      if (timeError) {
-        console.error("Error creating time entries for workers:", timeError);
-      }
-
-      // Add disturbance_workers entries
-      for (const workerId of toAdd) {
-        await supabase.from("disturbance_workers").insert({
-          disturbance_id: disturbanceId,
-          user_id: workerId,
-          is_main: false,
-        });
-      }
+        user_id: workerId,
+        is_main: false,
+      });
     }
   };
 

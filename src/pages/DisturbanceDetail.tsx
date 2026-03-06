@@ -465,7 +465,7 @@ const DisturbanceDetail = () => {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Die Arbeitszeit wurde automatisch für alle {workers.length} Mitarbeiter gebucht.
+                Die Arbeitszeit wird nur für den Ersteller gebucht. Weitere Mitarbeiter erscheinen auf dem PDF.
               </p>
             </CardContent>
           </Card>
