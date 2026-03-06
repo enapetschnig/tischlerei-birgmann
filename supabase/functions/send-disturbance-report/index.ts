@@ -376,7 +376,8 @@ async function generatePDF(data: ReportRequest & { technicians: string[] }, phot
 
   if (disturbance.unterschrift_kunde) {
     try {
-      doc.addImage(disturbance.unterschrift_kunde, "PNG", margin + 2, y, cW - 4, 33);
+      const sigFormat = disturbance.unterschrift_kunde.includes("image/png") ? "PNG" : "JPEG";
+      doc.addImage(disturbance.unterschrift_kunde, sigFormat, margin + 2, y, cW - 4, 33);
     } catch (_) {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(9);
@@ -540,12 +541,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const emailPayload: {
       from: string;
       to: string[];
+      reply_to?: string;
       subject: string;
       html: string;
       attachments?: { filename: string; content: string }[];
     } = {
       from: "Tischlerei Birgmann <noreply@chrisnapetschnig.at>",
       to: recipients,
+      ...(officeEmail ? { reply_to: officeEmail } : {}),
       subject: subject,
       html: emailHtml,
     };

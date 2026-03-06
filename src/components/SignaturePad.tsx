@@ -83,7 +83,7 @@ export const SignaturePad = ({
     if (isDrawing && hasSignature) {
       const canvas = canvasRef.current;
       if (canvas) {
-        const signature = canvas.toDataURL("image/png");
+        const signature = canvas.toDataURL("image/jpeg", 0.95);
         onSignatureChange(signature);
       }
     }
