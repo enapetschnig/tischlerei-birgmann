@@ -608,44 +608,16 @@ const TimeTracking = () => {
       }
     }
 
-    // Check for overlaps with existing entries
-    const { data: existingEntries } = await supabase
-      .from("time_entries")
-      .select("id, start_time, end_time, taetigkeit")
-      .eq("user_id", submitUserId)
-      .eq("datum", selectedDate);
-
-    if (existingEntries && existingEntries.length > 0) {
-      for (const entry of existingEntries) {
-        if (["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(entry.taetigkeit)) {
-          toast({ 
-            variant: "destructive", 
-            title: "Tag bereits blockiert", 
-            description: `Für diesen Tag ist bereits ${entry.taetigkeit} eingetragen.` 
-          });
-          setSaving(false);
-          return;
-        }
-        
-        const existingStart = timeToMinutes(entry.start_time);
-        const existingEnd = timeToMinutes(entry.end_time);
-        
-        for (let i = 0; i < timeBlocks.length; i++) {
-          const block = timeBlocks[i];
-          const blockStart = timeToMinutes(block.startTime);
-          const blockEnd = timeToMinutes(block.endTime);
-          
-          if (blockStart < existingEnd && blockEnd > existingStart) {
-            toast({ 
-              variant: "destructive", 
-              title: "Zeitüberschneidung", 
-              description: `Block ${i + 1} überschneidet mit bestehendem Eintrag (${entry.start_time.substring(0, 5)} - ${entry.end_time.substring(0, 5)})` 
-            });
-            setSaving(false);
-            return;
-          }
-        }
-      }
+    // Check if day is blocked (Urlaub, Krankenstand, etc.) using local state
+    if (isDayBlocked) {
+      const blockedEntry = existingDayEntries.find(e => ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"].includes(e.taetigkeit));
+      toast({
+        variant: "destructive",
+        title: "Tag bereits blockiert",
+        description: `Für diesen Tag ist bereits ${blockedEntry?.taetigkeit} eingetragen.`
+      });
+      setSaving(false);
+      return;
     }
 
     // Insert all blocks with team members via Edge Function
