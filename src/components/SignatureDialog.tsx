@@ -174,18 +174,21 @@ export const SignatureDialog = ({
         },
       });
 
-      if (sendError) {
-        // Extract detailed error message for debugging
-        let errorDetail = sendError.message || "Unbekannter Fehler";
+      // Check for error in response data (function returned 200 but with error field)
+      if (sendError || sendData?.error) {
+        let errorDetail = sendData?.error || sendError?.message || "Unbekannter Fehler";
         try {
-          const errorBody = await (sendError as any).context?.json?.();
-          if (errorBody?.error) errorDetail = errorBody.error;
+          const ctx = (sendError as any)?.context;
+          if (ctx && typeof ctx.json === "function") {
+            const errorBody = await ctx.json();
+            if (errorBody?.error) errorDetail = errorBody.error;
+          }
         } catch {}
-        console.error("Email send error:", sendError, "Detail:", errorDetail);
+        console.error("Email send error:", sendError, "Data:", sendData, "Detail:", errorDetail);
         toast({
           variant: "destructive",
           title: "E-Mail konnte nicht gesendet werden",
-          description: errorDetail,
+          description: String(errorDetail),
         });
         // Dialog stays open so user can retry
       } else {
