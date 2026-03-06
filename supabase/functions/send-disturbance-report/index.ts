@@ -1,4 +1,4 @@
-import { jsPDF } from "npm:jspdf@2.5.2";
+import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "npm:pdf-lib@1.17.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Supabase Admin Client for reading settings
@@ -49,6 +49,20 @@ interface ReportRequest {
   photos?: Photo[];
 }
 
+// A4 dimensions in points (1 point = 1/72 inch)
+const A4_WIDTH = 595.28;
+const A4_HEIGHT = 841.89;
+const MARGIN = 56.69; // ~20mm
+const CONTENT_WIDTH = A4_WIDTH - 2 * MARGIN;
+
+// Colors
+const BRAND_COLOR = rgb(140 / 255, 56 / 255, 16 / 255);
+const GRAY = rgb(100 / 255, 100 / 255, 100 / 255);
+const LIGHT_GRAY = rgb(150 / 255, 150 / 255, 150 / 255);
+const BLACK = rgb(0, 0, 0);
+const TABLE_BG = rgb(240 / 255, 240 / 255, 240 / 255);
+const TABLE_BORDER = rgb(200 / 255, 200 / 255, 200 / 255);
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString("de-AT", {
@@ -68,7 +82,7 @@ function formatDateShort(dateStr: string): string {
   });
 }
 
-async function fetchImageAsBase64(url: string): Promise<string | null> {
+async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -76,318 +90,372 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
       return null;
     }
     const arrayBuffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    let binary = "";
-    for (let i = 0; i < uint8Array.length; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
-    }
-    const base64 = btoa(binary);
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    return `data:${contentType};base64,${base64}`;
+    return { bytes: new Uint8Array(arrayBuffer), type: contentType };
   } catch (error) {
     console.error("Error fetching image:", error);
     return null;
   }
 }
 
-async function generatePDF(data: ReportRequest & { technicians: string[] }, photoImages: (string | null)[]): Promise<string> {
+function dataUriToBytes(dataUri: string): { bytes: Uint8Array; type: string } {
+  const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error("Invalid data URI");
+  const type = match[1];
+  const b64 = match[2];
+  const binaryStr = atob(b64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return { bytes, type };
+}
+
+// Helper to wrap text into lines that fit within maxWidth
+function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  const paragraphs = text.split("\n");
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.trim() === "") {
+      lines.push("");
+      continue;
+    }
+
+    const words = paragraph.split(" ");
+    let currentLine = "";
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+      if (testWidth > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+  }
+
+  return lines;
+}
+
+async function generatePDF(
+  data: ReportRequest & { technicians: string[] },
+  photoImages: ({ bytes: Uint8Array; type: string } | null)[]
+): Promise<Uint8Array> {
   const { disturbance, materials, technicians, photos } = data;
 
-  // Create PDF document
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4",
-  });
+  const doc = await PDFDocument.create();
+  const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const helveticaOblique = await doc.embedFont(StandardFonts.HelveticaOblique);
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 20;
-  const contentWidth = pageWidth - 2 * margin;
-  let yPos = margin;
+  let page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let yPos = A4_HEIGHT - MARGIN; // pdf-lib: y=0 is bottom
 
-  // Try loading logo from public URL
+  // Helper: check if we need a new page
+  const ensureSpace = (needed: number) => {
+    if (yPos - needed < MARGIN) {
+      page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+      yPos = A4_HEIGHT - MARGIN;
+    }
+  };
+
+  // --- HEADER ---
+
+  // Try loading logo
   let logoLoaded = false;
   try {
     const logoResponse = await fetch("https://www.birgmann.app/birgmann-logo.png");
     if (logoResponse.ok) {
       const logoBuffer = await logoResponse.arrayBuffer();
-      const logoUint8 = new Uint8Array(logoBuffer);
-      let logoBinary = "";
-      for (let i = 0; i < logoUint8.length; i++) {
-        logoBinary += String.fromCharCode(logoUint8[i]);
-      }
-      const logoBase64 = `data:image/png;base64,${btoa(logoBinary)}`;
-      doc.addImage(logoBase64, "PNG", margin, yPos, 40, 15);
+      const logoImage = await doc.embedPng(new Uint8Array(logoBuffer));
+      const logoDims = logoImage.scaleToFit(113, 42); // ~40mm x 15mm
+      page.drawImage(logoImage, {
+        x: MARGIN,
+        y: yPos - logoDims.height,
+        width: logoDims.width,
+        height: logoDims.height,
+      });
+
+      // Company name next to logo
+      page.drawText("TISCHLEREI BIRGMANN", {
+        x: MARGIN + logoDims.width + 14,
+        y: yPos - 20,
+        size: 20,
+        font: helveticaBold,
+        color: BRAND_COLOR,
+      });
+      yPos -= Math.max(logoDims.height, 28) + 8;
       logoLoaded = true;
     }
   } catch (e) {
     console.error("Could not load logo:", e);
   }
 
-  // Company name next to logo (or standalone)
-  if (logoLoaded) {
-    doc.setFontSize(20);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(140, 56, 16);
-    doc.text("TISCHLEREI BIRGMANN", margin + 45, yPos + 10);
-    yPos += 20;
-  } else {
-    doc.setFontSize(24);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(140, 56, 16);
-    doc.text("TISCHLEREI BIRGMANN", margin, yPos);
-    yPos += 8;
+  if (!logoLoaded) {
+    page.drawText("TISCHLEREI BIRGMANN", {
+      x: MARGIN,
+      y: yPos,
+      size: 24,
+      font: helveticaBold,
+      color: BRAND_COLOR,
+    });
+    yPos -= 28;
   }
 
   // Divider line
-  doc.setDrawColor(140, 56, 16);
-  doc.setLineWidth(0.5);
-  doc.line(margin, yPos, margin + contentWidth, yPos);
-  yPos += 5;
+  page.drawLine({
+    start: { x: MARGIN, y: yPos },
+    end: { x: MARGIN + CONTENT_WIDTH, y: yPos },
+    thickness: 1,
+    color: BRAND_COLOR,
+  });
+  yPos -= 18;
 
   // Subtitle
-  doc.setFontSize(16);
-  doc.setTextColor(100, 100, 100);
-  doc.text("Regiebericht", margin, yPos);
-  yPos += 12;
+  page.drawText("Regiebericht", {
+    x: MARGIN,
+    y: yPos,
+    size: 16,
+    font: helveticaBold,
+    color: GRAY,
+  });
+  yPos -= 28;
 
-  // Reset text color
-  doc.setTextColor(0, 0, 0);
+  // --- KUNDENDATEN ---
+  page.drawText("Kundendaten", {
+    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+  });
+  yPos -= 18;
 
-  // Customer Information Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Kundendaten", margin, yPos);
-  yPos += 7;
+  const drawInfoLine = (text: string) => {
+    page.drawText(text, {
+      x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
+    });
+    yPos -= 14;
+  };
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  drawInfoLine(`Name: ${disturbance.kunde_name}`);
+  if (disturbance.kunde_adresse) drawInfoLine(`Adresse: ${disturbance.kunde_adresse}`);
+  if (disturbance.kunde_telefon) drawInfoLine(`Telefon: ${disturbance.kunde_telefon}`);
+  if (disturbance.kunde_email) drawInfoLine(`E-Mail: ${disturbance.kunde_email}`);
 
-  doc.text(`Name: ${disturbance.kunde_name}`, margin, yPos);
-  yPos += 5;
+  yPos -= 14;
 
-  if (disturbance.kunde_adresse) {
-    doc.text(`Adresse: ${disturbance.kunde_adresse}`, margin, yPos);
-    yPos += 5;
-  }
+  // --- EINSATZDATEN ---
+  ensureSpace(100);
+  page.drawText("Einsatzdaten", {
+    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+  });
+  yPos -= 18;
 
-  if (disturbance.kunde_telefon) {
-    doc.text(`Telefon: ${disturbance.kunde_telefon}`, margin, yPos);
-    yPos += 5;
-  }
-
-  if (disturbance.kunde_email) {
-    doc.text(`E-Mail: ${disturbance.kunde_email}`, margin, yPos);
-    yPos += 5;
-  }
-
-  yPos += 10;
-
-  // Work Information Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Einsatzdaten", margin, yPos);
-  yPos += 7;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-
-  doc.text(`Datum: ${formatDate(disturbance.datum)}`, margin, yPos);
-  yPos += 5;
+  drawInfoLine(`Datum: ${formatDate(disturbance.datum)}`);
 
   const startTime = disturbance.start_time.slice(0, 5);
   const endTime = disturbance.end_time.slice(0, 5);
-  doc.text(`Arbeitszeit: ${startTime} - ${endTime} Uhr`, margin, yPos);
-  yPos += 5;
+  drawInfoLine(`Arbeitszeit: ${startTime} - ${endTime} Uhr`);
 
   if (disturbance.pause_minutes > 0) {
-    doc.text(`Pause: ${disturbance.pause_minutes} Minuten`, margin, yPos);
-    yPos += 5;
+    drawInfoLine(`Pause: ${disturbance.pause_minutes} Minuten`);
   }
 
-  doc.setFont("helvetica", "bold");
-  doc.text(`Gesamtstunden: ${disturbance.stunden.toFixed(2)} Stunden`, margin, yPos);
-  doc.setFont("helvetica", "normal");
-  yPos += 5;
+  page.drawText(`Gesamtstunden: ${disturbance.stunden.toFixed(2)} Stunden`, {
+    x: MARGIN, y: yPos, size: 10, font: helveticaBold, color: BLACK,
+  });
+  yPos -= 14;
 
-  // Display technicians
+  // Technicians
   if (technicians.length === 1) {
-    doc.text(`Techniker: ${technicians[0]}`, margin, yPos);
-    yPos += 5;
+    drawInfoLine(`Techniker: ${technicians[0]}`);
   } else if (technicians.length > 1) {
-    doc.text("Techniker:", margin, yPos);
-    yPos += 5;
+    drawInfoLine("Techniker:");
     technicians.forEach((name) => {
-      doc.text(`  - ${name}`, margin, yPos);
-      yPos += 5;
+      drawInfoLine(`  - ${name}`);
     });
   }
-  yPos += 7;
 
-  // Work Description Section
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Durchgeführte Arbeiten", margin, yPos);
-  yPos += 7;
+  yPos -= 10;
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  // --- DURCHGEFÜHRTE ARBEITEN ---
+  ensureSpace(60);
+  page.drawText("Durchgeführte Arbeiten", {
+    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+  });
+  yPos -= 18;
 
-  // Split long text into lines
-  const beschreibungLines = doc.splitTextToSize(disturbance.beschreibung, contentWidth);
-  doc.text(beschreibungLines, margin, yPos);
-  yPos += beschreibungLines.length * 5 + 5;
-
-  // Notes Section (if present)
-  if (disturbance.notizen) {
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Notizen", margin, yPos);
-    yPos += 7;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    const notizenLines = doc.splitTextToSize(disturbance.notizen, contentWidth);
-    doc.text(notizenLines, margin, yPos);
-    yPos += notizenLines.length * 5 + 5;
+  const beschreibungLines = wrapText(disturbance.beschreibung, helvetica, 10, CONTENT_WIDTH);
+  for (const line of beschreibungLines) {
+    ensureSpace(14);
+    if (line) {
+      page.drawText(line, {
+        x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
+      });
+    }
+    yPos -= 14;
   }
 
-  yPos += 5;
+  // --- NOTIZEN ---
+  if (disturbance.notizen) {
+    yPos -= 6;
+    ensureSpace(40);
+    page.drawText("Notizen", {
+      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+    });
+    yPos -= 18;
 
-  // Materials Section (if present)
+    const notizenLines = wrapText(disturbance.notizen, helvetica, 10, CONTENT_WIDTH);
+    for (const line of notizenLines) {
+      ensureSpace(14);
+      if (line) {
+        page.drawText(line, {
+          x: MARGIN, y: yPos, size: 10, font: helvetica, color: BLACK,
+        });
+      }
+      yPos -= 14;
+    }
+  }
+
+  yPos -= 10;
+
+  // --- MATERIALIEN ---
   if (materials && materials.length > 0) {
-    // Check if we need a new page
-    if (yPos > 220) {
-      doc.addPage();
-      yPos = margin;
+    ensureSpace(60);
+    page.drawText("Verwendetes Material", {
+      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+    });
+    yPos -= 18;
+
+    // Table header background
+    page.drawRectangle({
+      x: MARGIN,
+      y: yPos - 4,
+      width: CONTENT_WIDTH,
+      height: 18,
+      color: TABLE_BG,
+    });
+
+    page.drawText("Material", { x: MARGIN + 6, y: yPos, size: 9, font: helveticaBold, color: BLACK });
+    page.drawText("Menge", { x: MARGIN + 255, y: yPos, size: 9, font: helveticaBold, color: BLACK });
+    page.drawText("Notizen", { x: MARGIN + 340, y: yPos, size: 9, font: helveticaBold, color: BLACK });
+    yPos -= 20;
+
+    for (const mat of materials) {
+      ensureSpace(20);
+
+      // Row border
+      page.drawLine({
+        start: { x: MARGIN, y: yPos + 12 },
+        end: { x: MARGIN + CONTENT_WIDTH, y: yPos + 12 },
+        thickness: 0.5,
+        color: TABLE_BORDER,
+      });
+
+      page.drawText(mat.material || "-", { x: MARGIN + 6, y: yPos, size: 9, font: helvetica, color: BLACK });
+      page.drawText(mat.menge || "-", { x: MARGIN + 255, y: yPos, size: 9, font: helvetica, color: BLACK });
+      page.drawText(mat.notizen || "-", { x: MARGIN + 340, y: yPos, size: 9, font: helvetica, color: BLACK });
+      yPos -= 18;
     }
 
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Verwendetes Material", margin, yPos);
-    yPos += 7;
-
-    // Table header
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, yPos - 4, contentWidth, 7, "F");
-    doc.text("Material", margin + 2, yPos);
-    doc.text("Menge", margin + 90, yPos);
-    doc.text("Notizen", margin + 120, yPos);
-    yPos += 6;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-
-    materials.forEach((mat) => {
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = margin;
-      }
-
-      // Draw row border
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, yPos + 2, margin + contentWidth, yPos + 2);
-
-      doc.text(mat.material || "-", margin + 2, yPos);
-      doc.text(mat.menge || "-", margin + 90, yPos);
-      doc.text(mat.notizen || "-", margin + 120, yPos);
-      yPos += 7;
-    });
-
-    yPos += 8;
+    yPos -= 10;
   }
 
-  // Photos Section (if present)
+  // --- FOTOS ---
   if (photos && photos.length > 0 && photoImages.some(img => img !== null)) {
-    // Start new page for photos
-    doc.addPage();
-    yPos = margin;
+    page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+    yPos = A4_HEIGHT - MARGIN;
 
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(0, 0, 0);
-    doc.text("Fotos", margin, yPos);
-    yPos += 10;
+    page.drawText("Fotos", {
+      x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+    });
+    yPos -= 24;
 
     for (let i = 0; i < photos.length; i++) {
-      const imageData = photoImages[i];
-      if (!imageData) continue;
+      const imgData = photoImages[i];
+      if (!imgData) continue;
 
-      // Check if we need a new page
-      if (yPos > 200) {
-        doc.addPage();
-        yPos = margin;
-      }
+      ensureSpace(200);
 
       try {
-        // Detect image format from data URI
-        const imageFormat = imageData.startsWith("data:image/png") ? "PNG" : "JPEG";
-        // Add image with max width 80mm, proportional height ~60mm
-        doc.addImage(imageData, imageFormat, margin, yPos, 80, 60);
-        yPos += 65;
+        const image = imgData.type.includes("png")
+          ? await doc.embedPng(imgData.bytes)
+          : await doc.embedJpg(imgData.bytes);
 
-        // Add filename below image
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
-        doc.setTextColor(100, 100, 100);
-        doc.text(photos[i].file_name, margin, yPos);
-        yPos += 8;
-        doc.setTextColor(0, 0, 0);
+        const dims = image.scaleToFit(227, 170); // ~80mm x 60mm
+        page.drawImage(image, {
+          x: MARGIN,
+          y: yPos - dims.height,
+          width: dims.width,
+          height: dims.height,
+        });
+        yPos -= dims.height + 4;
+
+        // Filename
+        page.drawText(photos[i].file_name, {
+          x: MARGIN, y: yPos, size: 8, font: helvetica, color: GRAY,
+        });
+        yPos -= 20;
       } catch (e) {
-        console.error("Error adding image to PDF:", e);
+        console.error("Error adding photo to PDF:", e);
       }
     }
   }
 
-  // Signature Section
-  // Check if we need a new page for signature
-  if (yPos > 200) {
-    doc.addPage();
-    yPos = margin;
-  }
+  // --- UNTERSCHRIFT ---
+  ensureSpace(120);
 
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Kundenunterschrift", margin, yPos);
-  yPos += 5;
+  page.drawText("Kundenunterschrift", {
+    x: MARGIN, y: yPos, size: 12, font: helveticaBold, color: BLACK,
+  });
+  yPos -= 10;
 
-  // Add signature image if present
   if (disturbance.unterschrift_kunde) {
     try {
-      // The signature is a base64 data URL
-      const signatureData = disturbance.unterschrift_kunde;
+      const sigData = dataUriToBytes(disturbance.unterschrift_kunde);
+      const sigImage = sigData.type.includes("png")
+        ? await doc.embedPng(sigData.bytes)
+        : await doc.embedJpg(sigData.bytes);
 
-      // Add the signature image
-      doc.addImage(signatureData, "PNG", margin, yPos, 60, 25);
-      yPos += 30;
+      const sigDims = sigImage.scaleToFit(170, 71); // ~60mm x 25mm
+      page.drawImage(sigImage, {
+        x: MARGIN,
+        y: yPos - sigDims.height,
+        width: sigDims.width,
+        height: sigDims.height,
+      });
+      yPos -= sigDims.height + 8;
     } catch (e) {
       console.error("Error adding signature:", e);
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(10);
-      doc.text("[Unterschrift konnte nicht geladen werden]", margin, yPos + 10);
-      yPos += 20;
+      page.drawText("[Unterschrift konnte nicht geladen werden]", {
+        x: MARGIN, y: yPos - 14, size: 10, font: helveticaOblique, color: GRAY,
+      });
+      yPos -= 28;
     }
   }
 
   // Confirmation text
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
-  const confirmText = "Der Kunde bestätigt mit seiner Unterschrift die ordnungsgemäße Durchführung der oben genannten Arbeiten.";
-  const confirmLines = doc.splitTextToSize(confirmText, contentWidth);
-  doc.text(confirmLines, margin, yPos);
-  yPos += 15;
+  const confirmText = "Der Kunde bestaetigt mit seiner Unterschrift die ordnungsgemaesse Durchfuehrung der oben genannten Arbeiten.";
+  const confirmLines = wrapText(confirmText, helvetica, 9, CONTENT_WIDTH);
+  for (const line of confirmLines) {
+    page.drawText(line, {
+      x: MARGIN, y: yPos, size: 9, font: helvetica, color: GRAY,
+    });
+    yPos -= 12;
+  }
 
-  // Footer
-  doc.setFontSize(8);
-  doc.setTextColor(150, 150, 150);
-  const footerY = doc.internal.pageSize.getHeight() - 15;
-  doc.text(`Erstellt am: ${new Date().toLocaleDateString("de-AT")} | Tischlerei Birgmann`, margin, footerY);
+  // Footer on last page
+  const footerY = MARGIN - 20;
+  page.drawText(
+    `Erstellt am: ${new Date().toLocaleDateString("de-AT")} | Tischlerei Birgmann`,
+    { x: MARGIN, y: Math.max(footerY, 20), size: 8, font: helvetica, color: LIGHT_GRAY }
+  );
 
-  // Return as base64
-  return doc.output("datauristring").split(",")[1];
+  return await doc.save();
 }
 
 function generateEmailHtml(data: ReportRequest & { technicians: string[] }): string {
@@ -413,7 +481,7 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
 
         <p>Sehr geehrte Damen und Herren,</p>
 
-        <p>im Anhang finden Sie den Regiebericht für den Einsatz bei <strong>${disturbance.kunde_name}</strong> vom <strong>${formatDate(disturbance.datum)}</strong>.</p>
+        <p>im Anhang finden Sie den Regiebericht f&uuml;r den Einsatz bei <strong>${disturbance.kunde_name}</strong> vom <strong>${formatDate(disturbance.datum)}</strong>.</p>
 
         <div class="info-box">
           <strong>Zusammenfassung:</strong><br>
@@ -422,14 +490,22 @@ function generateEmailHtml(data: ReportRequest & { technicians: string[] }): str
           Gesamtstunden: ${disturbance.stunden.toFixed(2)} h
         </div>
 
-        <p>Der vollständige Bericht mit allen Details und der Kundenunterschrift befindet sich im angehängten PDF-Dokument.</p>
+        <p>Der vollst&auml;ndige Bericht mit allen Details und der Kundenunterschrift befindet sich im angeh&auml;ngten PDF-Dokument.</p>
 
-        <p>Mit freundlichen Grüßen,<br>
+        <p>Mit freundlichen Gr&uuml;&szlig;en,<br>
         Tischlerei Birgmann</p>
       </div>
     </body>
     </html>
   `;
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -453,26 +529,29 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     console.log("Generating PDF for disturbance:", disturbance.id);
 
-    // Fetch photo images from storage
+    // Fetch photo images from storage as raw bytes
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const photoImages: (string | null)[] = [];
+    const photoImages: ({ bytes: Uint8Array; type: string } | null)[] = [];
     if (photos && photos.length > 0) {
       console.log(`Fetching ${photos.length} photos...`);
       for (const photo of photos) {
         const photoUrl = `${supabaseUrl}/storage/v1/object/public/disturbance-photos/${photo.file_path}`;
-        const imageData = await fetchImageAsBase64(photoUrl);
+        const imageData = await fetchImageBytes(photoUrl);
         photoImages.push(imageData);
       }
     }
 
     // Generate PDF
-    let pdfBase64: string;
+    let pdfBytes: Uint8Array;
     try {
-      pdfBase64 = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
+      pdfBytes = await generatePDF({ disturbance, materials, technicians, photos }, photoImages);
     } catch (pdfError) {
       console.error("PDF generation failed:", pdfError);
       throw new Error(`PDF-Erstellung fehlgeschlagen: ${pdfError instanceof Error ? pdfError.message : "Unbekannter Fehler"}`);
     }
+
+    const pdfBase64 = uint8ArrayToBase64(pdfBytes);
+    console.log("PDF generated, size:", pdfBytes.length, "bytes");
 
     // Generate simple email HTML
     const emailHtml = generateEmailHtml({ disturbance, materials, technicians });
@@ -492,6 +571,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (officeEmail) recipients.push(officeEmail);
     if (disturbance.kunde_email) recipients.push(disturbance.kunde_email);
 
+    if (recipients.length === 0) {
+      throw new Error("Keine Empfaenger-E-Mail-Adresse vorhanden. Bitte Kunden-E-Mail oder Buero-E-Mail in den Einstellungen hinterlegen.");
+    }
+
     // Create filename
     const dateForFilename = formatDateShort(disturbance.datum).replace(/\./g, "-");
     const kundeForFilename = disturbance.kunde_name.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_");
@@ -501,7 +584,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     console.log("Sending email with PDF attachment to:", recipients);
 
-    // Send email via Resend REST API (no SDK import needed - avoids module-level crash in Deno)
+    // Send email via Resend REST API
     const apiKey = Deno.env.get("RESEND_API_KEY")!;
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -525,7 +608,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!resendResponse.ok) {
       const errorBody = await resendResponse.text();
-      throw new Error(`Resend API error: ${resendResponse.status} - ${errorBody}`);
+      console.error("Resend API error:", resendResponse.status, errorBody);
+      throw new Error(`E-Mail-Versand fehlgeschlagen (${resendResponse.status}): ${errorBody}`);
     }
 
     const emailResponse = await resendResponse.json();
