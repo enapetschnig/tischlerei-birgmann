@@ -319,6 +319,57 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
     fetchData();
   };
 
+  const handleReopenMonth = async (userId: string, name: string) => {
+    if (!confirm(`Monatsabschluss für ${name} (${monthNames[closeMonth - 1]} ${closeYear}) wirklich aufheben?`)) return;
+
+    const monthLabel = `${monthNames[closeMonth - 1]} ${closeYear}`;
+
+    // Find the Monatsabschluss transaction for this user/month
+    const { data: closingTx } = await supabase
+      .from("time_account_transactions")
+      .select("id, balance_before")
+      .eq("user_id", userId)
+      .eq("change_type", "Monatsabschluss")
+      .ilike("reason", `%${monthLabel}%`);
+
+    // Find the Auszahlung transaction for this user/month
+    const { data: payoutTx } = await supabase
+      .from("time_account_transactions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("change_type", "Auszahlung")
+      .ilike("reason", `%${monthLabel}%`);
+
+    if (!closingTx?.length) {
+      toast({ title: "Fehler", description: "Monatsabschluss-Transaktion nicht gefunden.", variant: "destructive" });
+      return;
+    }
+
+    const previousBalance = closingTx[0].balance_before;
+
+    // Delete both transactions
+    for (const tx of [...closingTx, ...(payoutTx || [])]) {
+      await supabase.from("time_account_transactions").delete().eq("id", tx.id);
+    }
+
+    // Restore balance
+    const account = accounts.find(a => a.user_id === userId);
+    if (account) {
+      await supabase
+        .from("time_accounts")
+        .update({ balance_hours: previousBalance })
+        .eq("id", account.id);
+    }
+
+    toast({
+      title: "Monatsabschluss aufgehoben",
+      description: `${name}: ${monthLabel} wurde wieder geöffnet. Kontostand: ${Number(previousBalance).toFixed(2)}h`,
+    });
+
+    calculateCloseData();
+    fetchData();
+  };
+
   const userTransactions = selectedUserId
     ? transactions.filter((t) => t.user_id === selectedUserId)
     : [];
@@ -525,7 +576,17 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
                         <TableCell className="text-right font-semibold">0.00</TableCell>
                         <TableCell>
                           {item.alreadyClosed ? (
-                            <Badge variant="secondary" className="text-[10px]">Bereits abgeschlossen</Badge>
+                            <div className="flex items-center gap-1">
+                              <Badge variant="secondary" className="text-[10px]">Abgeschlossen</Badge>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+                                onClick={() => handleReopenMonth(item.userId, item.name)}
+                              >
+                                Aufheben
+                              </Button>
+                            </div>
                           ) : (
                             <Badge variant="outline" className="text-[10px]">Offen</Badge>
                           )}
