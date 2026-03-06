@@ -55,7 +55,7 @@ export default function ResourcePlanning() {
   const [editingEquipment, setEditingEquipment] = useState<EquipmentItem | null>(null);
 
   const [assignForm, setAssignForm] = useState({
-    project_id: "", employee_id: "", vehicle_id: "",
+    project_id: "", employee_id: "", vehicle_id: "none",
     assignment_date: format(new Date(), "yyyy-MM-dd"),
     start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "",
   });
@@ -108,7 +108,7 @@ export default function ResourcePlanning() {
     }
     const payload = {
       project_id: assignForm.project_id, employee_id: assignForm.employee_id,
-      vehicle_id: assignForm.vehicle_id || null, assignment_date: assignForm.assignment_date,
+      vehicle_id: assignForm.vehicle_id && assignForm.vehicle_id !== "none" ? assignForm.vehicle_id : null, assignment_date: assignForm.assignment_date,
       start_time: assignForm.start_time, end_time: assignForm.end_time,
       role: assignForm.role, notes: assignForm.notes || null,
     };
@@ -130,7 +130,7 @@ export default function ResourcePlanning() {
     fetchAssignments();
   };
 
-  const resetAssignForm = () => setAssignForm({ project_id: "", employee_id: "", vehicle_id: "", assignment_date: format(new Date(), "yyyy-MM-dd"), start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "" });
+  const resetAssignForm = () => setAssignForm({ project_id: "", employee_id: "", vehicle_id: "none", assignment_date: format(new Date(), "yyyy-MM-dd"), start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "" });
 
   const handleSaveVehicle = async () => {
     if (!vehicleForm.name) { toast({ variant: "destructive", title: "Fehler", description: "Name ist Pflichtfeld." }); return; }
@@ -166,7 +166,7 @@ export default function ResourcePlanning() {
   };
 
   const openEditAssignment = (a: Assignment) => {
-    setAssignForm({ project_id: a.project_id, employee_id: a.employee_id, vehicle_id: a.vehicle_id || "", assignment_date: a.assignment_date, start_time: a.start_time, end_time: a.end_time, role: a.role, notes: a.notes || "" });
+    setAssignForm({ project_id: a.project_id, employee_id: a.employee_id, vehicle_id: a.vehicle_id || "none", assignment_date: a.assignment_date, start_time: a.start_time, end_time: a.end_time, role: a.role, notes: a.notes || "" });
     setEditingAssignment(a); setShowAssignDialog(true);
   };
 
@@ -369,7 +369,7 @@ export default function ResourcePlanning() {
                 <Select value={assignForm.vehicle_id} onValueChange={v => setAssignForm(p => ({ ...p, vehicle_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Optional..." /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Kein Fahrzeug</SelectItem>
+                    <SelectItem value="none">Kein Fahrzeug</SelectItem>
                     {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.name} {v.license_plate ? `(${v.license_plate})` : ""}</SelectItem>)}
                   </SelectContent>
                 </Select>
