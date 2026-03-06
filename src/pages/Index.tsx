@@ -4,7 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Camera, ArrowRight, Info, User as UserIcon, Zap, Receipt, CalendarDays } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, ArrowRight, Info, User as UserIcon, Zap, CalendarDays, MapPin } from "lucide-react";
+import { startOfWeek, endOfWeek, addDays, isSameDay, format } from "date-fns";
+import { de } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { useOnboarding } from "@/contexts/OnboardingContext";
 import {
@@ -23,6 +25,19 @@ type Project = {
   name: string;
   status: string;
   updated_at: string;
+};
+
+type WeekAssignment = {
+  id: string;
+  assignment_date: string;
+  start_time: string;
+  end_time: string;
+  project_id: string | null;
+  vehicle_id: string | null;
+  role: string;
+  notes: string | null;
+  projects: { name: string } | null;
+  vehicles: { name: string } | null;
 };
 
 type RecentTimeEntry = {
@@ -48,6 +63,7 @@ export default function Index() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentEntries, setRecentEntries] = useState<RecentTimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [weekAssignments, setWeekAssignments] = useState<WeekAssignment[]>([]);
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const { handleRestartInstallGuide } = useOnboarding();
 
@@ -62,6 +78,20 @@ export default function Index() {
     if (data) {
       setProjects(data);
     }
+  };
+
+  const fetchWeekAssignments = async (userId: string) => {
+    const now = new Date();
+    const weekStartDate = startOfWeek(now, { weekStartsOn: 1 });
+    const weekEndDate = endOfWeek(now, { weekStartsOn: 1 });
+    const { data } = await supabase
+      .from("resource_assignments")
+      .select("id, assignment_date, start_time, end_time, project_id, vehicle_id, role, notes, projects(name), vehicles(name)")
+      .eq("employee_id", userId)
+      .gte("assignment_date", format(weekStartDate, "yyyy-MM-dd"))
+      .lte("assignment_date", format(weekEndDate, "yyyy-MM-dd"))
+      .order("assignment_date");
+    if (data) setWeekAssignments(data as any);
   };
 
   const fetchRecentEntries = async (userId: string, role: string | null) => {
@@ -119,6 +149,7 @@ export default function Index() {
     await Promise.all([
       fetchProjects(),
       fetchRecentEntries(userId, role),
+      fetchWeekAssignments(userId),
     ]);
 
     setLoading(false);
@@ -288,6 +319,56 @@ export default function Index() {
               : "Zeiterfassung und Projektdokumentation"}
           </p>
         </div>
+
+        {/* Weekly Assignments Banner */}
+        {weekAssignments.length > 0 && (
+          <Card className="mb-6 border-primary/30 bg-primary/5">
+            <CardHeader className="pb-2 px-4 pt-4">
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-primary" />
+                Meine Einteilungen diese Woche
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="space-y-2">
+                {(() => {
+                  const now = new Date();
+                  const weekStartDate = startOfWeek(now, { weekStartsOn: 1 });
+                  const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStartDate, i));
+                  return weekDays.map(day => {
+                    const dayAssignments = weekAssignments.filter(a => isSameDay(new Date(a.assignment_date + "T00:00:00"), day));
+                    if (dayAssignments.length === 0) return null;
+                    const isToday = isSameDay(day, now);
+                    return (
+                      <div key={day.toISOString()} className={`rounded-lg p-3 ${isToday ? "bg-primary/15 border border-primary/40 ring-1 ring-primary/20" : "bg-background/80 border"}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-sm font-semibold ${isToday ? "text-primary" : ""}`}>
+                            {format(day, "EEEE, dd.MM.", { locale: de })}
+                          </span>
+                          {isToday && <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">Heute</span>}
+                        </div>
+                        {dayAssignments.map(a => (
+                          <div key={a.id} className="flex items-center gap-3 text-sm mt-1">
+                            <span className="font-mono text-xs text-muted-foreground">{a.start_time}–{a.end_time}</span>
+                            {a.projects?.name && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-muted-foreground" />
+                                <span className="font-medium">{a.projects.name}</span>
+                              </span>
+                            )}
+                            {a.vehicles?.name && (
+                              <span className="text-xs text-muted-foreground">({a.vehicles.name})</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Main Actions Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">

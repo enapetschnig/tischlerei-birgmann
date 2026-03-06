@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +24,7 @@ type Vehicle = { id: string; name: string; license_plate: string | null; type: s
 type EquipmentItem = { id: string; name: string; type: string; serial_number: string | null; is_active: boolean; notes: string | null };
 type Assignment = {
   id: string;
-  project_id: string;
+  project_id: string | null;
   employee_id: string;
   vehicle_id: string | null;
   assignment_date: string;
@@ -50,17 +51,23 @@ export default function ResourcePlanning() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [showVehicleDialog, setShowVehicleDialog] = useState(false);
   const [showEquipmentDialog, setShowEquipmentDialog] = useState(false);
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [editingEquipment, setEditingEquipment] = useState<EquipmentItem | null>(null);
 
   const [assignForm, setAssignForm] = useState({
-    project_id: "", employee_id: "", vehicle_id: "none",
+    project_id: "", employee_ids: [] as string[], vehicle_id: "none",
     assignment_date: format(new Date(), "yyyy-MM-dd"),
     start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "",
+    // For edit mode only (single employee)
+    employee_id: "",
   });
   const [vehicleForm, setVehicleForm] = useState({ name: "", license_plate: "", type: "Transporter", notes: "" });
   const [equipmentForm, setEquipmentForm] = useState({ name: "", type: "Werkzeug", serial_number: "", notes: "" });
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectPlz, setNewProjectPlz] = useState("");
+  const [newProjectAddress, setNewProjectAddress] = useState("");
 
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
@@ -102,24 +109,38 @@ export default function ResourcePlanning() {
   useEffect(() => { fetchAssignments(); }, [fetchAssignments]);
 
   const handleSaveAssignment = async () => {
-    if (!assignForm.project_id || !assignForm.employee_id || !assignForm.assignment_date) {
-      toast({ variant: "destructive", title: "Fehler", description: "Projekt, Mitarbeiter und Datum sind Pflichtfelder." });
+    if (!assignForm.assignment_date) {
+      toast({ variant: "destructive", title: "Fehler", description: "Datum ist ein Pflichtfeld." });
       return;
     }
-    const payload = {
-      project_id: assignForm.project_id, employee_id: assignForm.employee_id,
-      vehicle_id: assignForm.vehicle_id && assignForm.vehicle_id !== "none" ? assignForm.vehicle_id : null, assignment_date: assignForm.assignment_date,
+
+    const basePayload = {
+      project_id: assignForm.project_id || null,
+      vehicle_id: assignForm.vehicle_id && assignForm.vehicle_id !== "none" ? assignForm.vehicle_id : null,
+      assignment_date: assignForm.assignment_date,
       start_time: assignForm.start_time, end_time: assignForm.end_time,
       role: assignForm.role, notes: assignForm.notes || null,
     };
+
     if (editingAssignment) {
-      const { error } = await supabase.from("resource_assignments").update(payload).eq("id", editingAssignment.id);
+      // Edit mode: single employee
+      if (!assignForm.employee_id) {
+        toast({ variant: "destructive", title: "Fehler", description: "Mitarbeiter ist ein Pflichtfeld." });
+        return;
+      }
+      const { error } = await supabase.from("resource_assignments").update({ ...basePayload, employee_id: assignForm.employee_id }).eq("id", editingAssignment.id);
       if (error) { toast({ variant: "destructive", title: "Fehler", description: error.message }); return; }
       toast({ title: "Aktualisiert" });
     } else {
-      const { error } = await supabase.from("resource_assignments").insert(payload);
+      // Create mode: multiple employees
+      if (assignForm.employee_ids.length === 0) {
+        toast({ variant: "destructive", title: "Fehler", description: "Mindestens ein Mitarbeiter muss ausgewählt werden." });
+        return;
+      }
+      const entries = assignForm.employee_ids.map(eid => ({ ...basePayload, employee_id: eid }));
+      const { error } = await supabase.from("resource_assignments").insert(entries);
       if (error) { toast({ variant: "destructive", title: "Fehler", description: error.message }); return; }
-      toast({ title: "Eingeteilt" });
+      toast({ title: `${entries.length} Einteilung${entries.length > 1 ? "en" : ""} erstellt` });
     }
     setShowAssignDialog(false); setEditingAssignment(null); resetAssignForm(); fetchAssignments();
   };
@@ -130,7 +151,30 @@ export default function ResourcePlanning() {
     fetchAssignments();
   };
 
-  const resetAssignForm = () => setAssignForm({ project_id: "", employee_id: "", vehicle_id: "none", assignment_date: format(new Date(), "yyyy-MM-dd"), start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "" });
+  const resetAssignForm = () => setAssignForm({ project_id: "", employee_ids: [], employee_id: "", vehicle_id: "none", assignment_date: format(new Date(), "yyyy-MM-dd"), start_time: "07:00", end_time: "16:00", role: "Mitarbeiter", notes: "" });
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim() || !newProjectPlz.trim()) {
+      toast({ variant: "destructive", title: "Fehler", description: "Projektname und PLZ sind Pflichtfelder." });
+      return;
+    }
+    if (!/^\d{4,5}$/.test(newProjectPlz)) {
+      toast({ variant: "destructive", title: "Fehler", description: "PLZ muss 4-5 Ziffern haben." });
+      return;
+    }
+    const { data, error } = await supabase.from("projects").insert({
+      name: newProjectName.trim(),
+      plz: newProjectPlz.trim(),
+      adresse: newProjectAddress.trim() || null,
+      status: "aktiv",
+    }).select("id").single();
+    if (error) { toast({ variant: "destructive", title: "Fehler", description: error.message }); return; }
+    toast({ title: "Projekt erstellt" });
+    setShowNewProjectDialog(false);
+    setNewProjectName(""); setNewProjectPlz(""); setNewProjectAddress("");
+    await fetchData();
+    if (data) setAssignForm(p => ({ ...p, project_id: data.id }));
+  };
 
   const handleSaveVehicle = async () => {
     if (!vehicleForm.name) { toast({ variant: "destructive", title: "Fehler", description: "Name ist Pflichtfeld." }); return; }
@@ -154,7 +198,7 @@ export default function ResourcePlanning() {
     setEquipmentForm({ name: "", type: "Werkzeug", serial_number: "", notes: "" }); fetchData();
   };
 
-  const getProjectName = (id: string) => projects.find(p => p.id === id)?.name || "–";
+  const getProjectName = (id: string | null) => { if (!id) return null; return projects.find(p => p.id === id)?.name || null; };
   const getEmployeeName = (id: string) => { const p = profiles.find(x => x.id === id); return p ? `${p.vorname} ${p.nachname}` : "–"; };
   const getVehicleName = (id: string | null) => { if (!id) return null; return vehicles.find(v => v.id === id)?.name || null; };
   const getAssignmentsForDay = (day: Date) => assignments.filter(a => isSameDay(new Date(a.assignment_date + "T00:00:00"), day));
@@ -166,8 +210,17 @@ export default function ResourcePlanning() {
   };
 
   const openEditAssignment = (a: Assignment) => {
-    setAssignForm({ project_id: a.project_id, employee_id: a.employee_id, vehicle_id: a.vehicle_id || "none", assignment_date: a.assignment_date, start_time: a.start_time, end_time: a.end_time, role: a.role, notes: a.notes || "" });
+    setAssignForm({ project_id: a.project_id || "", employee_id: a.employee_id, employee_ids: [], vehicle_id: a.vehicle_id || "none", assignment_date: a.assignment_date, start_time: a.start_time, end_time: a.end_time, role: a.role, notes: a.notes || "" });
     setEditingAssignment(a); setShowAssignDialog(true);
+  };
+
+  const toggleEmployee = (id: string) => {
+    setAssignForm(prev => ({
+      ...prev,
+      employee_ids: prev.employee_ids.includes(id)
+        ? prev.employee_ids.filter(e => e !== id)
+        : [...prev.employee_ids, id],
+    }));
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><p>Lädt...</p></div>;
@@ -219,7 +272,7 @@ export default function ResourcePlanning() {
                       {da.length === 0 ? <p className="text-xs text-muted-foreground text-center py-2">Keine Einteilungen</p> : da.map(a => (
                         <div key={a.id} className="p-2 rounded border bg-accent/30 text-xs space-y-1 group relative">
                           <p className="font-semibold truncate">{getEmployeeName(a.employee_id)}</p>
-                          <p className="text-muted-foreground truncate">{getProjectName(a.project_id)}</p>
+                          {getProjectName(a.project_id) && <p className="text-muted-foreground truncate">{getProjectName(a.project_id)}</p>}
                           <div className="flex items-center gap-1 text-muted-foreground">
                             <span>{a.start_time}–{a.end_time}</span>
                             {getVehicleName(a.vehicle_id) && <Badge variant="outline" className="text-[10px] px-1 py-0"><Truck className="w-3 h-3 mr-0.5" />{getVehicleName(a.vehicle_id)}</Badge>}
@@ -257,7 +310,7 @@ export default function ResourcePlanning() {
                             <div key={a.id} className="flex items-center justify-between p-2 rounded border bg-accent/30">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">{getEmployeeName(a.employee_id)}</p>
-                                <p className="text-xs text-muted-foreground truncate">{getProjectName(a.project_id)}</p>
+                                {getProjectName(a.project_id) && <p className="text-xs text-muted-foreground truncate">{getProjectName(a.project_id)}</p>}
                                 <div className="flex items-center gap-2 mt-0.5">
                                   <span className="text-xs text-muted-foreground">{a.start_time}–{a.end_time}</span>
                                   {getVehicleName(a.vehicle_id) && <Badge variant="outline" className="text-[10px] px-1 py-0"><Truck className="w-3 h-3 mr-0.5" />{getVehicleName(a.vehicle_id)}</Badge>}
@@ -353,18 +406,47 @@ export default function ResourcePlanning() {
           <ScrollArea className="max-h-[70vh]">
             <div className="space-y-4 pr-2">
               <div><Label>Datum *</Label><Input type="date" value={assignForm.assignment_date} onChange={e => setAssignForm(p => ({ ...p, assignment_date: e.target.value }))} /></div>
-              <div><Label>Projekt *</Label>
-                <Select value={assignForm.project_id} onValueChange={v => setAssignForm(p => ({ ...p, project_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Projekt wählen..." /></SelectTrigger>
-                  <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <Label>Projekt</Label>
+                  <Button type="button" variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setShowNewProjectDialog(true)}>
+                    <Plus className="w-3 h-3 mr-1" />Neues Projekt
+                  </Button>
+                </div>
+                <Select value={assignForm.project_id || "none"} onValueChange={v => setAssignForm(p => ({ ...p, project_id: v === "none" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="Projekt wählen (optional)..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Kein Projekt</SelectItem>
+                    {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </div>
-              <div><Label>Mitarbeiter *</Label>
-                <Select value={assignForm.employee_id} onValueChange={v => setAssignForm(p => ({ ...p, employee_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Mitarbeiter wählen..." /></SelectTrigger>
-                  <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.vorname} {p.nachname}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+
+              {/* Employee selection */}
+              {editingAssignment ? (
+                <div><Label>Mitarbeiter *</Label>
+                  <Select value={assignForm.employee_id} onValueChange={v => setAssignForm(p => ({ ...p, employee_id: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Mitarbeiter wählen..." /></SelectTrigger>
+                    <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.vorname} {p.nachname}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div>
+                  <Label>Mitarbeiter * {assignForm.employee_ids.length > 0 && <span className="text-muted-foreground font-normal">({assignForm.employee_ids.length} ausgewählt)</span>}</Label>
+                  <div className="border rounded-md mt-1 max-h-[180px] overflow-y-auto">
+                    {profiles.map(p => (
+                      <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-accent/50 cursor-pointer border-b last:border-b-0">
+                        <Checkbox
+                          checked={assignForm.employee_ids.includes(p.id)}
+                          onCheckedChange={() => toggleEmployee(p.id)}
+                        />
+                        <span className="text-sm">{p.vorname} {p.nachname}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div><Label>Fahrzeug</Label>
                 <Select value={assignForm.vehicle_id} onValueChange={v => setAssignForm(p => ({ ...p, vehicle_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Optional..." /></SelectTrigger>
@@ -394,6 +476,22 @@ export default function ResourcePlanning() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setShowAssignDialog(false); setEditingAssignment(null); }}>Abbrechen</Button>
             <Button onClick={handleSaveAssignment}>{editingAssignment ? "Speichern" : "Einteilen"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Project Dialog */}
+      <Dialog open={showNewProjectDialog} onOpenChange={setShowNewProjectDialog}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader><DialogTitle>Neues Projekt erstellen</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Projektname *</Label><Input value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="z.B. Küche Müller" /></div>
+            <div><Label>PLZ *</Label><Input value={newProjectPlz} onChange={e => setNewProjectPlz(e.target.value)} maxLength={5} placeholder="z.B. 5020" /></div>
+            <div><Label>Adresse</Label><Input value={newProjectAddress} onChange={e => setNewProjectAddress(e.target.value)} placeholder="Optional" /></div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowNewProjectDialog(false)}>Abbrechen</Button>
+            <Button onClick={handleCreateProject}>Erstellen</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
