@@ -1,4 +1,4 @@
-import { jsPDF } from "https://esm.sh/jspdf@2.5.2";
+import { jsPDF } from "npm:jspdf@2.5.2";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Supabase Admin Client for reading settings
