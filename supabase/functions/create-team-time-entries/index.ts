@@ -75,19 +75,27 @@ Deno.serve(async (req: Request) => {
 
     const userId = claimsData.claims.sub;
 
+    // Create admin client with service role key to bypass RLS
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
     // Parse request body
     const { mainEntry, teamEntries, createWorkerLinks = true, skipMainEntry = false }: TeamTimeEntriesRequest = await req.json();
 
-    // Validate that the main entry belongs to the authenticated user
-    if (mainEntry.user_id !== userId) {
+    // Check if caller is an administrator
+    const { data: callerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    const isAdmin = callerProfile?.role === "administrator";
+
+    // Validate that the main entry belongs to the authenticated user (admins can edit any user)
+    if (!isAdmin && mainEntry.user_id !== userId) {
       return new Response(
         JSON.stringify({ success: false, error: "Main entry must belong to authenticated user" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Create admin client with service role key to bypass RLS
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Validate team members exist and are active
     if (teamEntries.length > 0) {
