@@ -224,11 +224,29 @@ export default function Index() {
       )
       .subscribe();
 
+    // Realtime subscription for resource assignments (Disponierung)
+    const assignmentsChannel = supabase
+      .channel("dashboard-assignments")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "resource_assignments",
+          filter: user ? `employee_id=eq.${user.id}` : undefined,
+        },
+        () => {
+          if (user) fetchWeekAssignments(user.id);
+        }
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
       subscription.unsubscribe();
       supabase.removeChannel(projectsChannel);
       supabase.removeChannel(entriesChannel);
+      supabase.removeChannel(assignmentsChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
