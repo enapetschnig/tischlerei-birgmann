@@ -1083,6 +1083,23 @@ export default function Admin() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Beschäftigung</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="sm:col-span-2">
+                        <Label>Arbeitszeitmodell</Label>
+                        <Select
+                          value={String(formData.wochenstunden ?? 40)}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
+                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
+                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div>
                         <Label>Position</Label>
                         <Input
