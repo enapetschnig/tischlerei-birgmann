@@ -219,6 +219,7 @@ export default function Index() {
   }
 
   if (!user) {
+    navigate("/auth");
     return null;
   }
 
