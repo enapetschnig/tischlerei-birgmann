@@ -618,56 +618,6 @@ export default function Admin() {
       </header>
 
       <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8 space-y-8 overflow-x-hidden">
-        {/* ===== WARTENDE AKTIVIERUNGEN ===== */}
-        {profiles.filter(p => !p.is_active).length > 0 && (
-          <section>
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              Wartende Aktivierungen
-              <span className="bg-destructive text-destructive-foreground text-sm px-2 py-1 rounded-full">
-                {profiles.filter(p => !p.is_active).length}
-              </span>
-            </h2>
-            
-            <Card className="mb-6 border-destructive/50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserIcon className="h-5 w-5 text-destructive" />
-                  Neue Registrierungen
-                </CardTitle>
-                <CardDescription>
-                  Diese Benutzer haben sich registriert und warten auf Freischaltung
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {profiles.filter(p => !p.is_active).map((profile) => (
-                    <div key={profile.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border bg-card">
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback className="bg-destructive/10 text-destructive">
-                            {profile.vorname[0]}
-                            {profile.nachname[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">
-                            {profile.vorname} {profile.nachname}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Wartet auf Freischaltung
-                          </p>
-                        </div>
-                      </div>
-                      <Button className="w-full sm:w-auto" onClick={() => handleActivateUser(profile.id, true)}>
-                        Aktivieren
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-        )}
 
         {/* ===== BENUTZERROLLEN SEKTION ===== */}
         <section>
