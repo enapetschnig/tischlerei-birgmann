@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import * as XLSX from "xlsx-js-style";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -69,6 +69,22 @@ interface Employee {
   land: string | null;
 }
 
+const calculateExportHours = (entry: { start_time: string; end_time: string; stunden: number }): number => {
+  if (!entry.start_time || !entry.end_time) return entry.stunden;
+  const [startH, startM] = entry.start_time.split(":").map(Number);
+  const [endH, endM] = entry.end_time.split(":").map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+  let totalMinutes = endMinutes - startMinutes;
+  if (totalMinutes <= 0) return entry.stunden;
+  if (startMinutes < 13 * 60 && endMinutes > 12 * 60) {
+    const overlapStart = Math.max(startMinutes, 12 * 60);
+    const overlapEnd = Math.min(endMinutes, 13 * 60);
+    totalMinutes -= (overlapEnd - overlapStart);
+  }
+  return totalMinutes / 60;
+};
+
 export default function Admin() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -92,8 +108,8 @@ export default function Admin() {
 
   // Delete user dialog states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<Profile | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   // App settings states
   const [regiereportEmail, setRegiereportEmail] = useState("");
@@ -1307,119 +1323,140 @@ export default function Admin() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Dialog - Step 1: Deaktivieren oder Löschen? */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      {/* Deactivate User Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!deactivating) { setDeleteDialogOpen(open); if (!open) setUserToDelete(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Benutzer deaktivieren</DialogTitle>
             <DialogDescription>
-              Möchten Sie {userToDelete?.vorname} {userToDelete?.nachname} nur deaktivieren oder komplett löschen?
+              {userToDelete?.vorname} {userToDelete?.nachname} wird deaktiviert. Alle Arbeitszeiten und Daten bleiben gespeichert. Die Arbeitszeiten ab Februar 2026 werden als Excel heruntergeladen.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex-col gap-2 sm:flex-col">
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
             <Button
               variant="outline"
-              className="w-full"
-              onClick={() => {
-                if (userToDelete) {
-                  handleActivateUser(userToDelete.id, false);
-                }
-                setDeleteDialogOpen(false);
-                setUserToDelete(null);
-              }}
+              onClick={() => { setDeleteDialogOpen(false); setUserToDelete(null); }}
+              disabled={deactivating}
             >
-              Nur deaktivieren
+              Abbrechen
             </Button>
             <Button
               variant="destructive"
-              className="w-full"
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setDeleteConfirmOpen(true);
-              }}
-            >
-              Benutzer löschen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete User Dialog - Step 2: Bestätigung */}
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Möchten Sie {userToDelete?.vorname} {userToDelete?.nachname} wirklich löschen?
-              <br /><br />
-              <strong>Hinweis:</strong> Alle Arbeitszeiterfassungen und Dokumente bleiben vorerst gespeichert.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setDeleteConfirmOpen(false);
-              setUserToDelete(null);
-            }}>
-              Abbrechen
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deactivating}
               onClick={async () => {
                 if (!userToDelete) return;
-                
+                setDeactivating(true);
                 try {
-                  // Delete the employee record if exists
-                  const { error: empError } = await supabase
-                    .from("employees")
-                    .delete()
-                    .eq("user_id", userToDelete.id);
-                  
-                  if (empError) {
-                    console.error("Employee delete error:", empError);
+                  // 1. Fetch all time entries from Feb 2026 onwards
+                  const { data: entries, error: entriesError } = await supabase
+                    .from("time_entries")
+                    .select("datum, start_time, end_time, pause_minutes, pause_start, pause_end, stunden, location_type, project_id, taetigkeit, disturbance_id")
+                    .eq("user_id", userToDelete.id)
+                    .gte("datum", "2026-02-01")
+                    .order("datum", { ascending: true });
+
+                  if (entriesError) throw entriesError;
+
+                  // 2. Fetch projects for names
+                  const { data: projectsData } = await supabase
+                    .from("projects")
+                    .select("id, name, plz");
+                  const projectMap: Record<string, { name: string; plz: string }> = {};
+                  projectsData?.forEach((p) => { projectMap[p.id] = { name: p.name, plz: p.plz || "" }; });
+
+                  // 3. Generate Excel with one sheet per month
+                  if (entries && entries.length > 0) {
+                    const wb = XLSX.utils.book_new();
+                    const monthNames = ["Jänner", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+                    // Group entries by month
+                    const byMonth: Record<string, typeof entries> = {};
+                    entries.forEach((e) => {
+                      const key = e.datum.substring(0, 7); // "2026-02"
+                      if (!byMonth[key]) byMonth[key] = [];
+                      byMonth[key].push(e);
+                    });
+
+                    Object.keys(byMonth).sort().forEach((monthKey) => {
+                      const [y, m] = monthKey.split("-").map(Number);
+                      const monthEntries = byMonth[monthKey];
+                      const sheetName = `${monthNames[m - 1]} ${y}`;
+
+                      const rows: (string | number)[][] = [
+                        [`${userToDelete.vorname} ${userToDelete.nachname} - ${sheetName}`],
+                        [],
+                        ["Datum", "Beginn", "Ende", "Pause (Min)", "Pause von", "Pause bis", "Stunden", "Ort", "Projekt", "PLZ", "Tätigkeit"],
+                      ];
+
+                      let totalHours = 0;
+                      monthEntries.forEach((e) => {
+                        const hours = calculateExportHours(e);
+                        totalHours += hours;
+                        const project = e.project_id ? projectMap[e.project_id] : null;
+                        const isAbsence = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag"].includes(e.taetigkeit);
+                        rows.push([
+                          e.datum,
+                          e.start_time?.substring(0, 5) || "",
+                          e.end_time?.substring(0, 5) || "",
+                          e.pause_minutes || 0,
+                          e.pause_start?.substring(0, 5) || "",
+                          e.pause_end?.substring(0, 5) || "",
+                          Number(hours.toFixed(2)),
+                          e.location_type === "baustelle" ? "Baustelle" : "Werkstatt",
+                          isAbsence ? e.taetigkeit : (project?.name || ""),
+                          isAbsence ? "" : (project?.plz || ""),
+                          e.taetigkeit,
+                        ]);
+                      });
+
+                      rows.push([]);
+                      rows.push(["", "", "", "", "", "SUMME", Number(totalHours.toFixed(2)), "", "", "", ""]);
+
+                      const ws = XLSX.utils.aoa_to_sheet(rows);
+                      ws["!cols"] = [{ wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 22 }, { wch: 8 }, { wch: 22 }];
+
+                      // Bold header row
+                      for (let c = 0; c <= 10; c++) {
+                        const cell = ws[XLSX.utils.encode_cell({ r: 2, c })];
+                        if (cell) cell.s = { font: { bold: true } };
+                      }
+                      // Bold title
+                      const titleCell = ws[XLSX.utils.encode_cell({ r: 0, c: 0 })];
+                      if (titleCell) titleCell.s = { font: { bold: true, sz: 14 } };
+
+                      XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
+                    });
+
+                    XLSX.writeFile(wb, `Arbeitszeiten_${userToDelete.vorname}_${userToDelete.nachname}_ab_Feb2026.xlsx`);
                   }
 
-                  // Delete user roles
-                  const { error: roleError } = await supabase
-                    .from("user_roles")
-                    .delete()
-                    .eq("user_id", userToDelete.id);
-                  
-                  if (roleError) {
-                    console.error("Role delete error:", roleError);
-                  }
-
-                  // Delete the profile
-                  const { error: profileError } = await supabase
-                    .from("profiles")
-                    .delete()
-                    .eq("id", userToDelete.id);
-                  
-                  if (profileError) throw profileError;
+                  // 4. Deactivate user
+                  handleActivateUser(userToDelete.id, false);
 
                   toast({
-                    title: "Benutzer gelöscht",
-                    description: `${userToDelete.vorname} ${userToDelete.nachname} wurde erfolgreich gelöscht.`,
+                    title: "Benutzer deaktiviert",
+                    description: entries && entries.length > 0
+                      ? `Excel mit ${entries.length} Einträgen heruntergeladen.`
+                      : "Keine Arbeitszeiten ab Februar gefunden.",
                   });
-
-                  fetchUsers({ silent: true });
-                  fetchEmployees();
                 } catch (error: any) {
                   toast({
                     variant: "destructive",
                     title: "Fehler",
-                    description: error.message || "Benutzer konnte nicht gelöscht werden",
+                    description: error.message || "Deaktivierung fehlgeschlagen",
                   });
+                } finally {
+                  setDeactivating(false);
+                  setDeleteDialogOpen(false);
+                  setUserToDelete(null);
                 }
-                
-                setDeleteConfirmOpen(false);
-                setUserToDelete(null);
               }}
             >
-              Ja, löschen
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              {deactivating ? "Wird exportiert..." : "Deaktivieren & Excel exportieren"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, ArrowRight, Info, User as UserIcon, Zap, CalendarDays, MapPin } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Info, User as UserIcon, Zap, CalendarDays, MapPin } from "lucide-react";
 import { startOfWeek, endOfWeek, addDays, isSameDay, format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -40,19 +40,6 @@ type WeekAssignment = {
   vehicles: { name: string } | null;
 };
 
-type RecentTimeEntry = {
-  id: string;
-  datum: string;
-  stunden: number;
-  taetigkeit: string;
-  disturbance_id: string | null;
-  projects: { name: string } | null;
-  profiles?: {
-    vorname: string;
-    nachname: string;
-  } | null;
-};
-
 export default function Index() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -61,7 +48,6 @@ export default function Index() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>("");
   const [projects, setProjects] = useState<Project[]>([]);
-  const [recentEntries, setRecentEntries] = useState<RecentTimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [weekAssignments, setWeekAssignments] = useState<WeekAssignment[]>([]);
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
@@ -92,25 +78,6 @@ export default function Index() {
       .lte("assignment_date", format(weekEndDate, "yyyy-MM-dd"))
       .order("assignment_date");
     if (data) setWeekAssignments(data as any);
-  };
-
-  const fetchRecentEntries = async (userId: string, role: string | null) => {
-    // For admins, fetch all entries. For employees, only their own
-    let query = supabase
-      .from("time_entries")
-      .select("id, datum, stunden, taetigkeit, disturbance_id, projects(name)")
-      .order("datum", { ascending: false })
-      .limit(5);
-
-    if (role === "mitarbeiter") {
-      query = query.eq("user_id", userId);
-    }
-
-    const { data } = await query;
-
-    if (data) {
-      setRecentEntries(data as any);
-    }
   };
 
   const loadForUser = async (userId: string) => {
@@ -148,7 +115,6 @@ export default function Index() {
 
     await Promise.all([
       fetchProjects(),
-      fetchRecentEntries(userId, role),
       fetchWeekAssignments(userId),
     ]);
 
@@ -207,23 +173,6 @@ export default function Index() {
       })
       .subscribe();
 
-    // Realtime subscription for time entries
-    const entriesChannel = supabase
-      .channel("dashboard-entries")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "time_entries",
-          filter: user ? `user_id=eq.${user.id}` : undefined,
-        },
-        () => {
-          if (user) fetchRecentEntries(user.id, userRole);
-        }
-      )
-      .subscribe();
-
     // Realtime subscription for resource assignments (Disponierung)
     const assignmentsChannel = supabase
       .channel("dashboard-assignments")
@@ -245,7 +194,6 @@ export default function Index() {
       isMounted = false;
       subscription.unsubscribe();
       supabase.removeChannel(projectsChannel);
-      supabase.removeChannel(entriesChannel);
       supabase.removeChannel(assignmentsChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -555,55 +503,6 @@ export default function Index() {
             </Card>
           )}
         </div>
-
-        {/* Recent Time Entries */}
-        {recentEntries.length > 0 && (
-          <div className="mt-6">
-            <h2 className="text-xl sm:text-2xl font-bold mb-4">
-              {isAdmin ? 'Letzte Projektbuchungen (Alle Mitarbeiter)' : 'Meine letzten Buchungen'}
-            </h2>
-            <div className="space-y-2">
-              {recentEntries.map((entry) => (
-                <Card 
-                  key={entry.id} 
-                  className="hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => {
-                    if (entry.disturbance_id) {
-                      navigate(`/disturbances/${entry.disturbance_id}`);
-                    } else {
-                      navigate("/my-hours");
-                    }
-                  }}
-                >
-                  <CardContent className="p-3">
-                    <div className="flex justify-between items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm truncate">
-                          {entry.projects?.name || (entry.disturbance_id ? "Regiebericht" : "Unbekanntes Projekt")}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">{entry.taetigkeit}</p>
-                      </div>
-                      <div className="text-right ml-3 shrink-0">
-                        <p className="font-bold">{entry.stunden} h</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(entry.datum).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
-                        </p>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            <Button 
-              variant="outline" 
-              className="w-full mt-3" 
-              onClick={() => navigate("/my-hours")}
-            >
-              Alle Stunden anzeigen
-            </Button>
-          </div>
-        )}
 
         {!isAdmin && (
           <Card className="mt-6 bg-primary/5 border-primary/20">
