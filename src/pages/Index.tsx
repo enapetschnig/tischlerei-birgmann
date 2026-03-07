@@ -135,7 +135,6 @@ export default function Index() {
         setUserRole(null);
         setUserName("");
         setProjects([]);
-        setRecentEntries([]);
         setLoading(false);
         navigate("/auth");
         return;
