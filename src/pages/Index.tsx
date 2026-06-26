@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Session, User } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Info, User as UserIcon, Zap, CalendarDays, MapPin } from "lucide-react";
+import { Clock, FolderKanban, Users, BarChart3, LogOut, FileText, Info, User as UserIcon, Zap, CalendarDays, MapPin, ArrowRight } from "lucide-react";
 import { startOfWeek, endOfWeek, addDays, isSameDay, format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
