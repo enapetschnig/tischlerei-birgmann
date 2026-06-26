@@ -69,6 +69,7 @@ serve(async (req) => {
   @page { size: A4; margin: 20mm; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10pt; color: #1a1a1a; margin: 0; padding: 0; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+  .logo { height: 50px; width: auto; display: block; margin-bottom: 6px; }
   .company { font-size: 14pt; font-weight: 700; color: #8C3810; }
   .company-details { font-size: 8pt; color: #666; margin-top: 4px; }
   .doc-type { font-size: 20pt; font-weight: 700; color: #333; text-align: right; }
@@ -90,7 +91,7 @@ serve(async (req) => {
 
 <div class="header">
   <div>
-    <div class="company">Tischlerei Birgmann</div>
+    <img class="logo" src="https://birgmann.app/birgmann-logo.png" alt="Tischlerei Birgmann" />
     <div class="company-details">
       Tischlerei & Innenausbau
     </div>

@@ -172,6 +172,7 @@ const Reports = () => {
           <title>Stundenauswertung - ${projectName}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
+            .brand-logo { height: 50px; width: auto; display: block; margin-bottom: 16px; }
             h1 { color: #333; border-bottom: 2px solid #666; padding-bottom: 10px; }
             .summary { background: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px; }
             .summary h2 { margin: 0 0 10px 0; font-size: 18px; }
@@ -184,6 +185,7 @@ const Reports = () => {
           </style>
         </head>
         <body>
+          <img class="brand-logo" src="${window.location.origin}/birgmann-logo.png" alt="Tischlerei Birgmann" />
           <h1>Stundenauswertung - ${projectName}</h1>
           <div class="summary">
             <h2>Zusammenfassung</h2>
