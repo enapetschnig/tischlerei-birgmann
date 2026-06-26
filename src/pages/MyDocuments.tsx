@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { FileText, Upload, Download, Eye, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { FileViewer } from "@/components/FileViewer";
+import { notifyAdmins } from "@/lib/notifications";
 
 interface Document {
   name: string;
@@ -89,7 +90,7 @@ export default function MyDocuments() {
       toast({ title: "Erfolg", description: "Dokument hochgeladen" });
       await fetchDocuments(userId, type, type === "lohnzettel" ? setPayslips : setSickNotes);
 
-      // Notify admins when a sick note is uploaded
+      // Notify admins when a sick note is uploaded (über die geteilte notifications-Tabelle)
       if (type === "krankmeldung") {
         try {
           const { data: profile } = await supabase
@@ -98,21 +99,8 @@ export default function MyDocuments() {
             .eq("id", userId)
             .single();
 
-          const { data: admins } = await supabase
-            .from("user_roles")
-            .select("user_id")
-            .eq("role", "administrator");
-
-          if (admins && profile) {
-            const notifications = admins.map((admin) => ({
-              user_id: admin.user_id,
-              title: "Neue Krankmeldung",
-              message: `${profile.vorname} ${profile.nachname} hat eine Krankmeldung hochgeladen.`,
-              type: "sick_note" as const,
-            }));
-
-            await supabase.from("in_app_notifications").insert(notifications);
-          }
+          const name = profile ? `${profile.vorname} ${profile.nachname}`.trim() : "Ein Mitarbeiter";
+          await notifyAdmins("krankmeldung", "Neue Krankmeldung", `${name} hat eine Krankmeldung hochgeladen.`);
         } catch (notifError) {
           console.error("Notification error:", notifError);
         }

@@ -20,6 +20,7 @@ const ProjectOverview = () => {
   const [projectName, setProjectName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [materialCount, setMaterialCount] = useState(0);
+  const [materialFileCount, setMaterialFileCount] = useState(0);
   const [categories, setCategories] = useState<DocumentCategory[]>([
     {
       type: "photos",
@@ -63,6 +64,7 @@ const ProjectOverview = () => {
     if (projectId) {
       fetchFileCounts();
       fetchMaterialCount();
+      fetchMaterialFileCount();
     }
   }, [projectId, isAdmin]);
 
@@ -103,6 +105,17 @@ const ProjectOverview = () => {
       .eq("project_id", projectId);
 
     setMaterialCount(count || 0);
+  };
+
+  const fetchMaterialFileCount = async () => {
+    if (!projectId) return;
+
+    const { data } = await supabase
+      .storage
+      .from("project-materials")
+      .list(projectId);
+
+    setMaterialFileCount(data?.length || 0);
   };
 
   const fetchFileCounts = async () => {
@@ -207,6 +220,26 @@ const ProjectOverview = () => {
               </div>
               <CardTitle className="text-xl">Materialliste</CardTitle>
               <CardDescription>Verwendete Materialien dokumentieren</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full">
+                Öffnen
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Material-Dateien - hochgeladene Materiallisten-Dateien (project-materials Bucket) */}
+          <Card
+            className="cursor-pointer hover:shadow-lg transition-shadow"
+            onClick={() => navigate(`/projects/${projectId}/materiallisten`)}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="text-primary"><Package className="h-8 w-8" /></div>
+                <div className="text-2xl font-bold">{materialFileCount}</div>
+              </div>
+              <CardTitle className="text-xl">Material-Dateien</CardTitle>
+              <CardDescription>Hochgeladene Materiallisten-Dateien</CardDescription>
             </CardHeader>
             <CardContent>
               <Button variant="outline" className="w-full">

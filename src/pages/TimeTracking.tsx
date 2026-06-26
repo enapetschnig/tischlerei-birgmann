@@ -387,10 +387,13 @@ const TimeTracking = () => {
       return;
     }
 
+    // Im Admin-Bearbeiten-Modus wird die Abwesenheit für den Ziel-Mitarbeiter gebucht, nicht für den Admin
+    const targetUserId = (isAdminEditMode && isAdmin) ? adminEditUserId! : user.id;
+
     const { count: existingCount } = await supabase
       .from("time_entries")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", targetUserId)
       .eq("datum", absenceData.date);
 
     if ((existingCount ?? 0) > 0) {
@@ -405,7 +408,7 @@ const TimeTracking = () => {
 
     let documentPath = null;
     if (absenceData.type === "krankenstand" && absenceData.document) {
-      const fileName = `${user.id}/${Date.now()}_${absenceData.document.name}`;
+      const fileName = `${targetUserId}/${Date.now()}_${absenceData.document.name}`;
       const { error: uploadError } = await supabase.storage
         .from("employee-documents")
         .upload(fileName, absenceData.document);
@@ -450,7 +453,7 @@ const TimeTracking = () => {
       const { data: timeAccount, error: taError } = await supabase
         .from("time_accounts")
         .select("id, balance_hours")
-        .eq("user_id", user.id)
+        .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (taError || !timeAccount) {
@@ -480,7 +483,7 @@ const TimeTracking = () => {
       }
 
       await supabase.from("time_account_transactions").insert({
-        user_id: user.id,
+        user_id: targetUserId,
         changed_by: user.id,
         change_type: "za_abzug",
         hours: -workingHours,
@@ -493,7 +496,7 @@ const TimeTracking = () => {
     const absenceLabel = absenceData.type === "urlaub" ? "Urlaub" : absenceData.type === "krankenstand" ? "Krankenstand" : absenceData.type === "weiterbildung" ? "Weiterbildung" : absenceData.type === "za" ? "Zeitausgleich" : "Feiertag";
 
     const { error } = await supabase.from("time_entries").insert({
-      user_id: user.id,
+      user_id: targetUserId,
       datum: absenceData.date,
       project_id: null,
       taetigkeit: absenceLabel,
@@ -514,7 +517,7 @@ const TimeTracking = () => {
         const { data: profileData } = await supabase
           .from("profiles")
           .select("vorname, nachname")
-          .eq("id", user.id)
+          .eq("id", targetUserId)
           .maybeSingle();
         const name = profileData ? `${profileData.vorname} ${profileData.nachname}`.trim() : "Ein Mitarbeiter";
         if (absenceData.type === "urlaub") {

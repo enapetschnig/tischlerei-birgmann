@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { FileViewer } from "@/components/FileViewer";
 
-type DocumentType = "plans" | "reports" | "photos" | "chef";
+type DocumentType = "plans" | "reports" | "photos" | "chef" | "materiallisten";
 
 type StorageFile = {
   name: string;
@@ -23,6 +23,7 @@ const bucketMap: Record<DocumentType, string> = {
   reports: "project-reports",
   photos: "project-photos",
   chef: "project-chef",
+  materiallisten: "project-materials",
 };
 
 const titleMap: Record<DocumentType, string> = {
@@ -30,6 +31,7 @@ const titleMap: Record<DocumentType, string> = {
   reports: "Regieberichte",
   photos: "Fotos",
   chef: "🔒 Chefordner",
+  materiallisten: "Material-Dateien",
 };
 
 const ProjectDetail = () => {

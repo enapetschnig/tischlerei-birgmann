@@ -1201,8 +1201,11 @@ export default function Admin() {
                 <div className="p-4">
                   <Button
                     onClick={() => {
-                      if (selectedEmployee) {
-                        navigate(`/hours-report?employeeId=${selectedEmployee.id}`);
+                      if (selectedEmployee?.user_id) {
+                        // HoursReport liest ?employee= und erwartet die user_id (nicht die employees-Zeilen-id)
+                        navigate(`/hours-report?employee=${selectedEmployee.user_id}`);
+                      } else {
+                        toast({ variant: "destructive", title: "Kein Benutzerkonto", description: "Dieser Mitarbeiter hat kein verknüpftes Benutzerkonto." });
                       }
                     }}
                     className="w-full"

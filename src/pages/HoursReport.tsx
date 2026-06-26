@@ -205,10 +205,20 @@ export default function HoursReport() {
 
   const monthDays = generateMonthDays();
   const totalHours = timeEntries.reduce((sum, entry) => sum + calculateHoursFromTimes(entry), 0);
-  const totalDifference = timeEntries.reduce((sum, entry) => {
-    const entryDate = parseISO(entry.datum);
-    return sum + calculateDifference(entryDate, calculateHoursFromTimes(entry));
-  }, 0);
+  // ZA-Differenz pro TAG berechnen (Tages-Soll wird einmal pro Tag abgezogen, nicht pro Eintrag).
+  // Sonst werden bei mehreren Einträgen am selben Tag (z.B. Werkstatt + Baustelle) die Sollstunden mehrfach abgezogen.
+  const totalDifference = (() => {
+    const dayMap = new Map<string, number>();
+    timeEntries.forEach((entry) => {
+      const key = entry.datum;
+      dayMap.set(key, (dayMap.get(key) || 0) + calculateHoursFromTimes(entry));
+    });
+    let sum = 0;
+    dayMap.forEach((dayHours, datum) => {
+      sum += calculateDifference(parseISO(datum), dayHours);
+    });
+    return sum;
+  })();
 
   const addBordersToCell = (cell: any, thick: boolean = false, centered: boolean = false) => {
     const borderStyle = thick ? "medium" : "thin";
@@ -279,7 +289,8 @@ export default function HoursReport() {
             const actualAfternoonStart = lunchBreak?.end || "";
             const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak ? `${lunchBreak.start} - ${lunchBreak.end}` : "";
             const calcHours = calculateHoursFromTimes(entry);
-            const diff = calculateDifference(dayDate, calcHours);
+            // ZA pro Eintrag nur bei Einzeltagen; bei mehreren Einträgen steht die ZA in der Tagessumme
+            const diff = dayEntries.length === 1 ? calculateDifference(dayDate, calcHours) : 0;
             const diffText = diff !== 0 ? diff.toFixed(2) : "";
             worksheetData.push([displayDay, entry.start_time?.substring(0, 5) || "", actualMorningEnd, actualPauseText, actualAfternoonStart, entry.end_time?.substring(0, 5) || "", calcHours.toFixed(2), diffText, ortText, projektName, entry.taetigkeit, plz]);
           } else {
@@ -295,7 +306,7 @@ export default function HoursReport() {
         });
         if (dayEntries.length > 1) {
           const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
-          const dayTotalDiff = dayEntries.reduce((sum, e) => sum + calculateDifference(dayDate, calculateHoursFromTimes(e)), 0);
+          const dayTotalDiff = calculateDifference(dayDate, dayTotalHours);
           if (includeZA) {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalDiff !== 0 ? dayTotalDiff.toFixed(2) : "", "", "", "", ""]);
           } else {
@@ -486,6 +497,7 @@ export default function HoursReport() {
                           monthDays.map((day) => {
                             const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), day.date));
                             const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
+                            const dayTotalDiff = calculateDifference(day.date, dayTotalHours);
                             const hasMultipleEntries = dayEntries.length > 1;
 
                             if (dayEntries.length === 0) {
@@ -505,13 +517,14 @@ export default function HoursReport() {
                             return dayEntries.map((entry, entryIndex) => {
                               const lunchBreak = calculateLunchBreak(entry);
                               const calcHours = calculateHoursFromTimes(entry);
-                              const diff = calculateDifference(day.date, calcHours);
                               const project = projects[entry.project_id];
                               const ortIcon = entry.location_type === "baustelle" ? "🏗️" : entry.location_type === "werkstatt" ? "🔧" : "";
                               const ortText = entry.location_type === "baustelle" ? "Baustelle" : entry.location_type === "werkstatt" ? "Werkstatt" : "";
                               const projektName = entry.taetigkeit === "Urlaub" || entry.taetigkeit === "Krankenstand" ? entry.taetigkeit : (project?.name || "");
                               const isFirstEntry = entryIndex === 0;
                               const isLastEntry = entryIndex === dayEntries.length - 1;
+                              // ZA bei Einzeltagen pro Eintrag, bei Mehrfacheinträgen nur in der letzten Zeile (Tages-ZA)
+                              const diff = hasMultipleEntries ? (isLastEntry ? dayTotalDiff : 0) : calculateDifference(day.date, calcHours);
 
                               return (
                                 <TableRow key={entry.id} className={cn(day.isWeekend && "bg-muted/30", hasMultipleEntries && !isLastEntry && "border-b-0")}>

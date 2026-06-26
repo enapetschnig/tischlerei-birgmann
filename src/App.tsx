@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { OnboardingProvider } from "./contexts/OnboardingContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { InstallPromptDialog } from "./components/InstallPromptDialog";
 import { useOnboarding } from "./contexts/OnboardingContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,7 +18,6 @@ import ProjectOverview from "./pages/ProjectOverview";
 import MyHours from "./pages/MyHours";
 import MyDocuments from "./pages/MyDocuments";
 import Reports from "./pages/Reports";
-import ConstructionSites from "./pages/ConstructionSites";
 import Admin from "./pages/Admin";
 import HoursReport from "./pages/HoursReport";
 import Employees from "./pages/Employees";
@@ -60,7 +60,6 @@ function AppContent() {
         <Route path="/my-hours" element={<MyHours />} />
         <Route path="/my-documents" element={<MyDocuments />} />
         <Route path="/reports" element={<Reports />} />
-        <Route path="/construction-sites" element={<ConstructionSites />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/hours-report" element={<HoursReport />} />
         <Route path="/employees" element={<Employees />} />
@@ -81,17 +80,19 @@ function AppContent() {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <OnboardingProvider>
-          <AppContent />
-        </OnboardingProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <OnboardingProvider>
+            <AppContent />
+          </OnboardingProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

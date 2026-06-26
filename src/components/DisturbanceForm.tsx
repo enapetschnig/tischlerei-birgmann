@@ -357,23 +357,43 @@ export const DisturbanceForm = ({ open, onOpenChange, onSuccess, editData }: Dis
   };
 
   const updateMaterials = async (disturbanceId: string, userId: string) => {
-    // Delete existing materials
-    await supabase
+    // Sauberes Diff statt Blanket-Delete: sonst werden fremde Material-Zeilen per RLS vom Delete
+    // verschont, aber neu eingefügt -> Duplikate. Bestehende Zeilen (mit DB-id) werden aktualisiert,
+    // neue eingefügt, entfernte gelöscht.
+    const { data: existingRows } = await supabase
       .from("disturbance_materials")
-      .delete()
+      .select("id")
       .eq("disturbance_id", disturbanceId);
+    const existingIds = new Set((existingRows || []).map(r => r.id));
 
-    // Add new materials
     const validMaterials = materials.filter(m => m.material.trim());
-    if (validMaterials.length > 0) {
+    const formIds = new Set(validMaterials.map(m => m.id));
+
+    // Im Formular entfernte Zeilen löschen (RLS erlaubt nur eigene/Admin)
+    const toDelete = [...existingIds].filter(id => !formIds.has(id));
+    if (toDelete.length > 0) {
+      await supabase.from("disturbance_materials").delete().in("id", toDelete);
+    }
+
+    // Neue Zeilen einfügen
+    const toInsert = validMaterials.filter(m => !existingIds.has(m.id));
+    if (toInsert.length > 0) {
       await supabase.from("disturbance_materials").insert(
-        validMaterials.map(m => ({
+        toInsert.map(m => ({
           disturbance_id: disturbanceId,
           user_id: userId,
           material: m.material.trim(),
           menge: m.menge.trim() || null,
         }))
       );
+    }
+
+    // Bestehende Zeilen aktualisieren
+    for (const m of validMaterials.filter(m => existingIds.has(m.id))) {
+      await supabase
+        .from("disturbance_materials")
+        .update({ material: m.material.trim(), menge: m.menge.trim() || null })
+        .eq("id", m.id);
     }
   };
 

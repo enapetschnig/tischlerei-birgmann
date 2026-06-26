@@ -5,6 +5,14 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  // Klarer Hinweis statt kryptischem "supabaseUrl is required", falls die Env-Variablen
+  // beim Build/Deploy fehlen (z.B. nicht in Vercel gesetzt).
+  console.error(
+    "Supabase-Konfiguration fehlt: VITE_SUPABASE_URL und/oder VITE_SUPABASE_PUBLISHABLE_KEY sind nicht gesetzt."
+  );
+}
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 

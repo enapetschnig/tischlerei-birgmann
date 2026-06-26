@@ -135,13 +135,14 @@ export default function ProjectHoursReport() {
       let total = 0;
 
       data.forEach((entry: any) => {
-        total += entry.stunden;
-
         const profile = profiles[entry.user_id];
         if (!profile) {
           console.warn(`Profil nicht gefunden für user_id: ${entry.user_id}`);
           return;
         }
+
+        // Summe erst nach der Profil-Prüfung erhöhen, damit Gesamt = Summe der angezeigten Zeilen
+        total += entry.stunden;
 
         detailedEntries.push({
           id: entry.id,

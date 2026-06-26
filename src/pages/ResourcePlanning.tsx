@@ -88,12 +88,13 @@ export default function ResourcePlanning() {
   }, []);
 
   const fetchAssignments = useCallback(async () => {
+    // weekEnd aus weekStart ableiten statt aus dem Render-Scope (sonst neue Date-Referenz pro Render -> Endlos-Refetch)
     const from = format(weekStart, "yyyy-MM-dd");
-    const to = format(weekEnd, "yyyy-MM-dd");
+    const to = format(endOfWeek(weekStart, { weekStartsOn: 1 }), "yyyy-MM-dd");
     const { data } = await supabase.from("resource_assignments").select("*")
       .gte("assignment_date", from).lte("assignment_date", to).order("assignment_date");
     if (data) setAssignments(data);
-  }, [weekStart, weekEnd]);
+  }, [weekStart]);
 
   useEffect(() => {
     const check = async () => {

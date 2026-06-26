@@ -213,6 +213,7 @@ export default function Employees() {
 
     try {
       const fullName = `${selectedEmployee.vorname} ${selectedEmployee.nachname}`;
+      let cloudBackupSaved = false;
 
       // 1. Generate Excel backup
       const excelData = await generateExcelBackup(selectedEmployee);
@@ -229,12 +230,17 @@ export default function Employees() {
 
         // Upload to Supabase storage
         const fileName = `${selectedEmployee.id}_${selectedEmployee.nachname}_${selectedEmployee.vorname}_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
-        await supabase.storage
+        const { error: backupError } = await supabase.storage
           .from("deleted-users")
           .upload(fileName, excelData, {
             contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             upsert: true,
           });
+        if (backupError) {
+          console.error("Cloud-Backup fehlgeschlagen:", backupError);
+        } else {
+          cloudBackupSaved = true;
+        }
       }
 
       // 2. Update time_entries: set user_id to NULL, add name to notizen
@@ -278,7 +284,7 @@ export default function Employees() {
 
       toast({
         title: "Mitarbeiter gelöscht",
-        description: `${fullName} wurde gelöscht. ${excelData ? "Excel-Backup wurde heruntergeladen und gespeichert." : "Keine Stundeneinträge vorhanden."}`,
+        description: `${fullName} wurde gelöscht. ${excelData ? (cloudBackupSaved ? "Excel-Backup wurde heruntergeladen und in der Cloud gespeichert." : "Excel-Backup wurde heruntergeladen (Cloud-Speicherung nicht möglich).") : "Keine Stundeneinträge vorhanden."}`,
       });
 
       setSelectedEmployee(null);
