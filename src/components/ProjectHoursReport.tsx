@@ -22,9 +22,14 @@ interface DetailedProjectEntry {
   pauseEnd: string | null;
   pauseMinutes: number;
   taetigkeit: string;
+  subfolderName: string | null;
   hours: number;
   locationType: string;
 }
+
+/** Tätigkeits-Anzeige inkl. Unterordner (z.B. "Zuschneiden · Montage"). */
+const activityLabel = (entry: DetailedProjectEntry): string =>
+  [entry.subfolderName, entry.taetigkeit].filter(Boolean).join(" · ");
 
 interface Project {
   id: string;
@@ -111,7 +116,7 @@ export default function ProjectHoursReport() {
 
     const { data, error } = await supabase
       .from("time_entries")
-      .select("id, datum, start_time, end_time, pause_start, pause_end, pause_minutes, stunden, taetigkeit, user_id, location_type")
+      .select("id, datum, start_time, end_time, pause_start, pause_end, pause_minutes, stunden, taetigkeit, user_id, location_type, project_subfolders(name)")
       .eq("project_id", selectedProjectId)
       .gte("datum", startDate)
       .lte("datum", endDate)
@@ -155,6 +160,7 @@ export default function ProjectHoursReport() {
           pauseEnd: entry.pause_end,
           pauseMinutes: entry.pause_minutes || 0,
           taetigkeit: entry.taetigkeit,
+          subfolderName: entry.project_subfolders?.name || null,
           hours: entry.stunden,
           locationType: entry.location_type || "baustelle",
         });
@@ -225,7 +231,7 @@ export default function ProjectHoursReport() {
         formatPause(entry),
         entry.hours.toFixed(2),
         entry.employeeName,
-        entry.taetigkeit,
+        activityLabel(entry),
         ortText,
       ]);
     });
@@ -445,7 +451,7 @@ export default function ProjectHoursReport() {
                       <TableCell>
                         <Badge variant="outline" className="gap-1">
                           <Briefcase className="w-3 h-3" />
-                          {entry.taetigkeit}
+                          {activityLabel(entry)}
                         </Badge>
                       </TableCell>
                       <TableCell>

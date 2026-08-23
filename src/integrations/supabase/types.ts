@@ -822,6 +822,35 @@ export type Database = {
         }
         Relationships: []
       }
+      project_subfolders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          project_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_subfolders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       time_entries: {
         Row: {
           created_at: string
@@ -833,10 +862,13 @@ export type Database = {
           notizen: string | null
           pause_end: string | null
           pause_minutes: number
+          pause_mittag_minutes: number | null
           pause_start: string | null
+          pause_vormittag_minutes: number | null
           project_id: string | null
           start_time: string
           stunden: number
+          subfolder_id: string | null
           taetigkeit: string | null
           updated_at: string
           user_id: string
@@ -852,10 +884,13 @@ export type Database = {
           notizen?: string | null
           pause_end?: string | null
           pause_minutes?: number
+          pause_mittag_minutes?: number | null
           pause_start?: string | null
+          pause_vormittag_minutes?: number | null
           project_id?: string | null
           start_time: string
           stunden: number
+          subfolder_id?: string | null
           taetigkeit?: string | null
           updated_at?: string
           user_id: string
@@ -871,10 +906,13 @@ export type Database = {
           notizen?: string | null
           pause_end?: string | null
           pause_minutes?: number
+          pause_mittag_minutes?: number | null
           pause_start?: string | null
+          pause_vormittag_minutes?: number | null
           project_id?: string | null
           start_time?: string
           stunden?: number
+          subfolder_id?: string | null
           taetigkeit?: string | null
           updated_at?: string
           user_id?: string
@@ -893,6 +931,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_subfolder_id_fkey"
+            columns: ["subfolder_id"]
+            isOneToOne: false
+            referencedRelation: "project_subfolders"
             referencedColumns: ["id"]
           },
         ]

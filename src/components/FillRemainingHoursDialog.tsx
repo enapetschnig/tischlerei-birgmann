@@ -6,12 +6,18 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Plus } from "lucide-react";
+import { Clock } from "lucide-react";
 
 type Project = {
   id: string;
   name: string;
   plz: string;
+};
+
+type Subfolder = {
+  id: string;
+  project_id: string;
+  name: string;
 };
 
 interface FillRemainingHoursDialogProps {
@@ -21,18 +27,19 @@ interface FillRemainingHoursDialogProps {
   bookedHours: number;
   targetHours: number;
   projects: Project[];
+  subfolders: Subfolder[];
   lastEndTime: string | null;
-  onSubmit: (projectId: string | null, locationType: string, description: string, startTime: string, endTime: string, pauseMinutes: number, pauseStart: string | null, pauseEnd: string | null) => Promise<void>;
+  onSubmit: (projectId: string | null, subfolderId: string | null, locationType: string, description: string, startTime: string, endTime: string, pauseMinutes: number) => Promise<void>;
 }
 
 const calculateNextStartTime = (lastEndTime: string | null): string => {
   if (!lastEndTime) return "07:00";
-  
+
   const [hours, minutes] = lastEndTime.split(":").map(Number);
   const totalMinutes = hours * 60 + minutes + 30; // 30 min after last entry
   const newHours = Math.floor(totalMinutes / 60);
   const newMinutes = totalMinutes % 60;
-  
+
   return `${newHours.toString().padStart(2, "0")}:${newMinutes.toString().padStart(2, "0")}`;
 };
 
@@ -41,7 +48,7 @@ const calculateEndTime = (startTime: string, hours: number): string => {
   const totalMinutes = startH * 60 + startM + Math.round(hours * 60);
   const endHours = Math.floor(totalMinutes / 60);
   const endMinutes = totalMinutes % 60;
-  
+
   return `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`;
 };
 
@@ -52,29 +59,30 @@ export const FillRemainingHoursDialog = ({
   bookedHours,
   targetHours,
   projects,
+  subfolders,
   lastEndTime,
   onSubmit,
 }: FillRemainingHoursDialogProps) => {
   const [locationType, setLocationType] = useState<"baustelle" | "werkstatt">("werkstatt");
   const [projectId, setProjectId] = useState("");
+  const [subfolderId, setSubfolderId] = useState("");
   const [description, setDescription] = useState("");
   const [pauseMinutes, setPauseMinutes] = useState(0);
-  const [pauseStart, setPauseStart] = useState("");
-  const [pauseEnd, setPauseEnd] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const startTime = calculateNextStartTime(lastEndTime);
   const endTime = calculateEndTime(startTime, remainingHours + pauseMinutes / 60);
+
+  const projectSubfolders = subfolders.filter((s) => s.project_id === projectId);
 
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setLocationType("werkstatt");
       setProjectId("");
+      setSubfolderId("");
       setDescription("");
       setPauseMinutes(0);
-      setPauseStart("");
-      setPauseEnd("");
     }
   }, [open]);
 
@@ -82,14 +90,13 @@ export const FillRemainingHoursDialog = ({
     setSubmitting(true);
     try {
       await onSubmit(
-        locationType === "werkstatt" ? null : (projectId || null),
+        projectId || null,
+        subfolderId || null,
         locationType,
         description,
         startTime,
         endTime,
-        pauseMinutes,
-        pauseStart || null,
-        pauseEnd || null
+        pauseMinutes
       );
       onOpenChange(false);
     } finally {
@@ -139,53 +146,33 @@ export const FillRemainingHoursDialog = ({
 
           {/* Pause */}
           <div className="space-y-2">
-            <Label>Pause <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <Label className="text-xs text-muted-foreground">Minuten</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={pauseMinutes}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value) || 0;
-                    setPauseMinutes(val);
-                  }}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Von</Label>
-                <Input
-                  type="time"
-                  value={pauseStart}
-                  onChange={(e) => setPauseStart(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Bis</Label>
-                <Input
-                  type="time"
-                  value={pauseEnd}
-                  onChange={(e) => setPauseEnd(e.target.value)}
-                />
-              </div>
-            </div>
+            <Label>Pause <span className="text-muted-foreground font-normal">(optional, Minuten)</span></Label>
+            <Input
+              type="number"
+              min={0}
+              max={120}
+              value={pauseMinutes}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                setPauseMinutes(val);
+              }}
+              placeholder="0"
+              className="w-28"
+            />
           </div>
 
           {/* Location selection */}
           <div className="space-y-2">
             <Label>Arbeitsort</Label>
-            <RadioGroup 
-              value={locationType} 
-              onValueChange={(value: "baustelle" | "werkstatt") => setLocationType(value)} 
+            <RadioGroup
+              value={locationType}
+              onValueChange={(value: "baustelle" | "werkstatt") => setLocationType(value)}
               className="grid grid-cols-2 gap-4"
             >
               <div>
                 <RadioGroupItem value="baustelle" id="fill-baustelle" className="peer sr-only" />
-                <Label 
-                  htmlFor="fill-baustelle" 
+                <Label
+                  htmlFor="fill-baustelle"
                   className="flex h-12 cursor-pointer items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent peer-data-[state=checked]:border-primary text-sm"
                 >
                   🏗️ Baustelle
@@ -193,8 +180,8 @@ export const FillRemainingHoursDialog = ({
               </div>
               <div>
                 <RadioGroupItem value="werkstatt" id="fill-werkstatt" className="peer sr-only" />
-                <Label 
-                  htmlFor="fill-werkstatt" 
+                <Label
+                  htmlFor="fill-werkstatt"
                   className="flex h-12 cursor-pointer items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent peer-data-[state=checked]:border-primary text-sm"
                 >
                   🔧 Werkstatt
@@ -203,19 +190,35 @@ export const FillRemainingHoursDialog = ({
             </RadioGroup>
           </div>
 
-          {/* Project selection - only for Baustelle */}
-          {locationType === "baustelle" && (
+          {/* Project selection - für Baustelle UND Werkstatt */}
+          <div className="space-y-2">
+            <Label>Projekt <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Select value={projectId} onValueChange={(v) => { setProjectId(v); setSubfolderId(""); }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Projekt auswählen" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} ({p.plz})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Unterordner */}
+          {projectId && projectSubfolders.length > 0 && (
             <div className="space-y-2">
-              <Label>Projekt <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <Select value={projectId} onValueChange={setProjectId}>
+              <Label>Unterordner <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select value={subfolderId} onValueChange={(v) => setSubfolderId(v === "none" ? "" : v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Projekt auswählen" />
+                  <SelectValue placeholder="Unterordner auswählen" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} ({p.plz})
-                    </SelectItem>
+                  <SelectItem value="none" className="text-muted-foreground">Kein Unterordner</SelectItem>
+                  {projectSubfolders.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -234,15 +237,15 @@ export const FillRemainingHoursDialog = ({
 
           {/* Actions */}
           <div className="flex gap-2 justify-end pt-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Abbrechen
             </Button>
-            <Button 
-              onClick={handleSubmit} 
+            <Button
+              onClick={handleSubmit}
               disabled={submitting || remainingHours <= 0}
             >
               {submitting ? "Wird gebucht..." : "Reststunden buchen"}

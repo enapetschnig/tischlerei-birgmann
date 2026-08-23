@@ -25,6 +25,7 @@ type TimeEntry = {
   location_type: string;
   notizen: string | null;
   projects: { name: string; plz: string } | null;
+  project_subfolders: { name: string } | null;
   project_id: string | null;
 };
 
@@ -66,7 +67,7 @@ const MyHours = () => {
 
     const { data } = await supabase
       .from("time_entries")
-      .select("*, projects(name, plz)")
+      .select("*, projects(name, plz), project_subfolders(name)")
       .eq("user_id", user.id)
       .gte("datum", startDate)
       .lte("datum", endDate)
@@ -343,7 +344,11 @@ const MyHours = () => {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{entry.projects?.name || '-'}</TableCell>
+                        <TableCell>
+                          {entry.projects?.name
+                            ? `${entry.projects.name}${entry.project_subfolders?.name ? ` – ${entry.project_subfolders.name}` : ""}`
+                            : '-'}
+                        </TableCell>
                         <TableCell>{entry.taetigkeit}</TableCell>
                         <TableCell className="text-center">
                           {entry.start_time?.substring(0, 5) || '-'}

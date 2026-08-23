@@ -20,7 +20,7 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import * as XLSX from "xlsx-js-style";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
-import { getNormalWorkingHours } from "@/lib/workingHours";
+import { getNormalWorkingHours, loadWorkTimeSettings } from "@/lib/workingHours";
 
 interface Employee {
   id: string;
@@ -60,6 +60,7 @@ export default function Employees() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    loadWorkTimeSettings();
     checkAdminAccess();
     fetchEmployees();
   }, []);

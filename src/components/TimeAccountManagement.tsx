@@ -14,7 +14,7 @@ import { Clock, Plus, History, Loader2, CalendarCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, isSameDay } from "date-fns";
 import { de } from "date-fns/locale";
-import { getNormalWorkingHours, getWorkModelLabel } from "@/lib/workingHours";
+import { getNormalWorkingHours, getWorkModelLabel, loadWorkTimeSettings } from "@/lib/workingHours";
 
 type Profile = {
   id: string;
@@ -87,6 +87,7 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
 
   const fetchData = async () => {
     setLoading(true);
+    await loadWorkTimeSettings();
     const [{ data: accData }, { data: txData }] = await Promise.all([
       supabase.from("time_accounts").select("*"),
       supabase

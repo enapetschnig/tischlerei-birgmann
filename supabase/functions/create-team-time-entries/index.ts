@@ -17,6 +17,9 @@ interface TimeEntryData {
   pause_minutes: number;
   pause_start?: string | null;
   pause_end?: string | null;
+  pause_vormittag_minutes?: number | null;
+  pause_mittag_minutes?: number | null;
+  subfolder_id?: string | null;
   location_type: string;
   notizen?: string | null;
   week_type?: string | null;
@@ -143,6 +146,9 @@ Deno.serve(async (req: Request) => {
           pause_minutes: mainEntry.pause_minutes,
           pause_start: mainEntry.pause_start || null,
           pause_end: mainEntry.pause_end || null,
+          pause_vormittag_minutes: mainEntry.pause_vormittag_minutes ?? null,
+          pause_mittag_minutes: mainEntry.pause_mittag_minutes ?? null,
+          subfolder_id: mainEntry.subfolder_id || null,
           location_type: mainEntry.location_type,
           notizen: mainEntry.notizen || null,
           week_type: mainEntry.week_type || null,
@@ -180,6 +186,9 @@ Deno.serve(async (req: Request) => {
           pause_minutes: teamEntry.pause_minutes,
           pause_start: teamEntry.pause_start || null,
           pause_end: teamEntry.pause_end || null,
+          pause_vormittag_minutes: teamEntry.pause_vormittag_minutes ?? null,
+          pause_mittag_minutes: teamEntry.pause_mittag_minutes ?? null,
+          subfolder_id: teamEntry.subfolder_id || null,
           location_type: teamEntry.location_type,
           notizen: teamEntry.notizen || null,
           week_type: teamEntry.week_type || null,

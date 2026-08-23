@@ -19,6 +19,23 @@ import { format } from "date-fns";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
 import LeaveManagement from "@/components/LeaveManagement";
 import TimeAccountManagement from "@/components/TimeAccountManagement";
+import {
+  DEFAULT_WORK_TIME_SETTINGS,
+  dayNetMinutes,
+  formatMinutesAsHours,
+  invalidateWorkTimeSettings,
+  loadWorkTimeSettings,
+  type DayWorkTime,
+  type WorkTimeSettings,
+} from "@/lib/workingHours";
+
+const WEEKDAY_LABELS: Record<number, string> = {
+  1: "Montag",
+  2: "Dienstag",
+  3: "Mittwoch",
+  4: "Donnerstag",
+  5: "Freitag",
+};
 
 type Profile = {
   id: string;
@@ -116,6 +133,57 @@ export default function Admin() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
+  // Regelarbeitszeiten (Mo-Fr), admin-einstellbar
+  const [workTimes, setWorkTimes] = useState<WorkTimeSettings>({ ...DEFAULT_WORK_TIME_SETTINGS });
+  const [savingWorkTimes, setSavingWorkTimes] = useState(false);
+
+  const loadRegelarbeitszeiten = useCallback(async () => {
+    invalidateWorkTimeSettings();
+    const settings = await loadWorkTimeSettings();
+    setWorkTimes({ ...settings });
+  }, []);
+
+  const updateWorkDay = (day: number, updates: Partial<DayWorkTime>) => {
+    setWorkTimes(prev => ({ ...prev, [day]: { ...prev[day], ...updates } }));
+  };
+
+  const saveRegelarbeitszeiten = async () => {
+    for (let d = 1; d <= 5; d++) {
+      const day = workTimes[d];
+      if (!day?.start || !day?.end) {
+        toast({ variant: "destructive", title: "Fehler", description: "Beginn und Ende müssen für alle Tage gesetzt sein." });
+        return;
+      }
+      if (dayNetMinutes(day) <= 0) {
+        toast({ variant: "destructive", title: "Fehler", description: `${WEEKDAY_LABELS[d]}: Netto-Arbeitszeit muss größer als 0 sein.` });
+        return;
+      }
+    }
+
+    setSavingWorkTimes(true);
+    try {
+      const payload: Record<string, DayWorkTime> = {};
+      for (let d = 1; d <= 5; d++) payload[String(d)] = workTimes[d];
+
+      const { error } = await supabase
+        .from("app_settings")
+        .upsert({
+          key: "regelarbeitszeiten",
+          value: JSON.stringify(payload),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+
+      invalidateWorkTimeSettings();
+      toast({ title: "Gespeichert", description: "Regelarbeitszeiten wurden aktualisiert." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Fehler", description: err.message || "Regelarbeitszeiten konnten nicht gespeichert werden." });
+    } finally {
+      setSavingWorkTimes(false);
+    }
+  };
+
   const fetchAppSettings = useCallback(async () => {
     setLoadingSettings(true);
     try {
@@ -180,7 +248,8 @@ export default function Admin() {
     fetchEmployees();
     fetchSickNotes();
     fetchAppSettings();
-  }, [fetchAppSettings]);
+    loadRegelarbeitszeiten();
+  }, [fetchAppSettings, loadRegelarbeitszeiten]);
 
   const checkAdminAccess = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -901,6 +970,90 @@ export default function Admin() {
             <Settings className="h-6 w-6" />
             Einstellungen
           </h2>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Regelarbeitszeiten
+              </CardTitle>
+              <CardDescription>
+                Standard-Arbeitszeiten pro Wochentag. Diese werden in der Zeiterfassung als
+                "Regelarbeitszeit" vorgeschlagen und bestimmen die Tagessollstunden.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Kopfzeile (nur Desktop) */}
+              <div className="hidden sm:grid sm:grid-cols-[90px_1fr_1fr_1fr_1fr_70px] gap-2 text-xs text-muted-foreground font-medium px-1">
+                <span>Tag</span>
+                <span>Beginn</span>
+                <span>Ende</span>
+                <span>Pause VM</span>
+                <span>Pause Mittag</span>
+                <span className="text-right">Netto</span>
+              </div>
+              {[1, 2, 3, 4, 5].map((d) => {
+                const day = workTimes[d];
+                if (!day) return null;
+                return (
+                  <div key={d} className="grid grid-cols-2 sm:grid-cols-[90px_1fr_1fr_1fr_1fr_70px] gap-2 items-center border-b pb-3 sm:border-0 sm:pb-0">
+                    <span className="text-sm font-medium col-span-2 sm:col-span-1">{WEEKDAY_LABELS[d]}</span>
+                    <div>
+                      <Label className="sm:hidden text-xs text-muted-foreground">Beginn</Label>
+                      <Input
+                        type="time"
+                        value={day.start}
+                        onChange={(e) => updateWorkDay(d, { start: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="sm:hidden text-xs text-muted-foreground">Ende</Label>
+                      <Input
+                        type="time"
+                        value={day.end}
+                        onChange={(e) => updateWorkDay(d, { end: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="sm:hidden text-xs text-muted-foreground">Pause VM (Min.)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={day.pauseVormittag}
+                        onChange={(e) => updateWorkDay(d, { pauseVormittag: Math.max(0, parseInt(e.target.value) || 0) })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="sm:hidden text-xs text-muted-foreground">Pause Mittag (Min.)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={day.pauseMittag}
+                        onChange={(e) => updateWorkDay(d, { pauseMittag: Math.max(0, parseInt(e.target.value) || 0) })}
+                      />
+                    </div>
+                    <span className="text-sm font-semibold text-right col-span-2 sm:col-span-1">
+                      {formatMinutesAsHours(dayNetMinutes(day))} h
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <span className="text-sm text-muted-foreground">
+                  Wochensumme (Vollzeit):{" "}
+                  <strong>
+                    {formatMinutesAsHours([1, 2, 3, 4, 5].reduce((sum, d) => sum + dayNetMinutes(workTimes[d] || { start: "0:00", end: "0:00", pauseVormittag: 0, pauseMittag: 0 }), 0))} h
+                  </strong>
+                </span>
+                <Button onClick={saveRegelarbeitszeiten} disabled={savingWorkTimes}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {savingWorkTimes ? "Speichert..." : "Speichern"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

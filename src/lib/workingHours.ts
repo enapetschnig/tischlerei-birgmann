@@ -1,10 +1,91 @@
-export interface WorkTimePreset {
-  startTime: string;
-  endTime: string;
-  pauseStart: string;
-  pauseEnd: string;
-  pauseMinutes: number;
-  totalHours: number;
+import { supabase } from "@/integrations/supabase/client";
+
+/**
+ * Regelarbeitszeit eines Wochentags (admin-einstellbar im Admin-Bereich).
+ * Pausen als Dauer in Minuten (Vormittag + Mittag), nicht als von/bis.
+ */
+export interface DayWorkTime {
+  start: string; // "06:30"
+  end: string; // "15:30"
+  pauseVormittag: number; // Minuten
+  pauseMittag: number; // Minuten
+}
+
+/** 1 = Montag ... 5 = Freitag */
+export type WorkTimeSettings = Record<number, DayWorkTime>;
+
+const DEFAULT_DAY: DayWorkTime = { start: "06:30", end: "15:30", pauseVormittag: 0, pauseMittag: 60 };
+
+export const DEFAULT_WORK_TIME_SETTINGS: WorkTimeSettings = {
+  1: { ...DEFAULT_DAY },
+  2: { ...DEFAULT_DAY },
+  3: { ...DEFAULT_DAY },
+  4: { ...DEFAULT_DAY },
+  5: { ...DEFAULT_DAY },
+};
+
+let settingsCache: WorkTimeSettings | null = null;
+
+/**
+ * Lädt die Regelarbeitszeiten aus app_settings (Key 'regelarbeitszeiten') und cached sie.
+ * Vor Soll-/Vorbelegungs-Berechnungen einmal awaiten; Fallback sind die bisherigen Defaults.
+ */
+export async function loadWorkTimeSettings(): Promise<WorkTimeSettings> {
+  if (settingsCache) return settingsCache;
+  try {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "regelarbeitszeiten")
+      .maybeSingle();
+    if (data?.value) {
+      const parsed = JSON.parse(data.value) as Record<string, Partial<DayWorkTime>>;
+      const result: WorkTimeSettings = {};
+      for (let d = 1; d <= 5; d++) {
+        const raw = parsed[String(d)] || {};
+        result[d] = {
+          start: raw.start || DEFAULT_DAY.start,
+          end: raw.end || DEFAULT_DAY.end,
+          pauseVormittag: Number(raw.pauseVormittag ?? DEFAULT_DAY.pauseVormittag),
+          pauseMittag: Number(raw.pauseMittag ?? DEFAULT_DAY.pauseMittag),
+        };
+      }
+      settingsCache = result;
+      return result;
+    }
+  } catch {
+    // Fallback unten
+  }
+  settingsCache = { ...DEFAULT_WORK_TIME_SETTINGS };
+  return settingsCache;
+}
+
+/** Cache verwerfen (nach dem Speichern im Admin-Bereich aufrufen). */
+export function invalidateWorkTimeSettings(): void {
+  settingsCache = null;
+}
+
+export function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+export function minutesToTime(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Netto-Arbeitsminuten eines Regelarbeitstags (Ende - Beginn - Pausen). */
+export function dayNetMinutes(day: DayWorkTime): number {
+  return Math.max(0, timeToMinutes(day.end) - timeToMinutes(day.start) - day.pauseVormittag - day.pauseMittag);
+}
+
+function getDaySetting(date: Date): DayWorkTime | null {
+  const dayOfWeek = date.getDay(); // 0=So ... 6=Sa
+  if (dayOfWeek < 1 || dayOfWeek > 5) return null;
+  const settings = settingsCache ?? DEFAULT_WORK_TIME_SETTINGS;
+  return settings[dayOfWeek] ?? DEFAULT_DAY;
 }
 
 /**
@@ -27,10 +108,8 @@ export function isNonWorkingDay(date: Date, wochenstunden: number = 40): boolean
 }
 
 /**
- * Gibt die Sollstunden für einen bestimmten Tag zurück.
- * 40h: Mo–Fr = 8h
- * 32h: Mo/Di/Do/Fr = 8h, Mi = 0h (frei)
- * 20h/10h: immer 0h (flexibel, kein festes Tagesziel)
+ * Gibt die Sollstunden für einen bestimmten Tag zurück (aus den Regelarbeitszeiten).
+ * 20h/10h: immer 0h (flexibel, kein festes Tagesziel), 32h: Mittwoch frei.
  */
 export function getNormalWorkingHours(date: Date, wochenstunden: number = 40): number {
   const dayOfWeek = date.getDay();
@@ -44,8 +123,9 @@ export function getNormalWorkingHours(date: Date, wochenstunden: number = 40): n
   // 32h-Modell: Mittwoch frei
   if (wochenstunden === 32 && dayOfWeek === 3) return 0;
 
-  // 40h und 32h an Arbeitstagen: 8h netto (= 9h Bruttozeit mit 1h Mittagspause)
-  return 8;
+  const day = getDaySetting(date);
+  if (!day) return 0;
+  return dayNetMinutes(day) / 60;
 }
 
 /**
@@ -62,9 +142,17 @@ export function getWeeklyTargetHours(wochenstunden: number = 40): number {
   return wochenstunden;
 }
 
+export interface WorkTimePreset {
+  startTime: string;
+  endTime: string;
+  pauseVormittagMinutes: number;
+  pauseMittagMinutes: number;
+  pauseMinutes: number; // Summe beider Pausen
+  totalHours: number; // netto
+}
+
 /**
- * Gibt die Standard-Arbeitszeiten für einen Tag zurück (für Formular-Vorbelegung).
- * 40h/32h an Arbeitstagen: 06:30–15:30, Pause 12:00–13:00 (60 min)
+ * Gibt die Regelarbeitszeit für einen Tag zurück (für Formular-Vorbelegung).
  * Freie Tage und flexible Modelle: null
  */
 export function getDefaultWorkTimes(date: Date, wochenstunden: number = 40): WorkTimePreset | null {
@@ -79,24 +167,28 @@ export function getDefaultWorkTimes(date: Date, wochenstunden: number = 40): Wor
   // 32h: Mittwoch frei
   if (wochenstunden === 32 && dayOfWeek === 3) return null;
 
-  // Arbeitstag (40h Mo–Fr, 32h Mo/Di/Do/Fr): 06:30–15:30, 1h Mittagspause
+  const day = getDaySetting(date);
+  if (!day) return null;
+
   return {
-    startTime: "06:30",
-    endTime: "15:30",
-    pauseStart: "12:00",
-    pauseEnd: "13:00",
-    pauseMinutes: 60,
-    totalHours: 8,
+    startTime: day.start,
+    endTime: day.end,
+    pauseVormittagMinutes: day.pauseVormittag,
+    pauseMittagMinutes: day.pauseMittag,
+    pauseMinutes: day.pauseVormittag + day.pauseMittag,
+    totalHours: dayNetMinutes(day) / 60,
   };
 }
 
 /**
- * Gibt die Standard-Startzeit für das Modell zurück.
- * 40h/32h: "06:30"
+ * Gibt die Standard-Startzeit für das Modell zurück (Montag als Referenztag).
  * 20h/10h: "" (flexibel)
  */
 export function getDefaultStartTime(wochenstunden: number = 40): string {
-  if (wochenstunden === 40 || wochenstunden === 32) return "06:30";
+  if (wochenstunden === 40 || wochenstunden === 32) {
+    const settings = settingsCache ?? DEFAULT_WORK_TIME_SETTINGS;
+    return settings[1]?.start ?? DEFAULT_DAY.start;
+  }
   return "";
 }
 
@@ -111,4 +203,11 @@ export function getWorkModelLabel(wochenstunden: number): string {
     case 10: return "10 Std. – Geringfügig (flexibel)";
     default: return `${wochenstunden} Std.`;
   }
+}
+
+/** Formatiert Minuten als "H:MM" (z.B. 195 -> "3:15"). */
+export function formatMinutesAsHours(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "";
+  const abs = Math.abs(minutes);
+  return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
 }

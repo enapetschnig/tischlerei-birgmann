@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNormalWorkingHours, getWorkModelLabel } from "@/lib/workingHours";
+import { getNormalWorkingHours, getWorkModelLabel, loadWorkTimeSettings } from "@/lib/workingHours";
 
 // Calculate hours directly from start/end times with automatic 12:00-13:00 lunch break
 const calculateHoursFromTimes = (entry: { start_time: string; end_time: string; stunden: number }): number => {
@@ -91,6 +91,7 @@ export default function HoursReport() {
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 
   useEffect(() => {
+    loadWorkTimeSettings();
     checkAdminStatus();
     fetchProfiles();
     fetchProjects();
