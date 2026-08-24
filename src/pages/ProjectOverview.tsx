@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText, FileCheck, Package, Camera, ImagePlus, Lock } from "lucide-react";
+import { ArrowLeft, FileText, FileCheck, Package, Camera, ImagePlus, Lock, FolderOpen, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 type DocumentCategory = {
   type: "plans" | "reports" | "photos" | "chef";
@@ -12,6 +15,11 @@ type DocumentCategory = {
   icon: React.ReactNode;
   count: number;
   adminOnly?: boolean;
+};
+
+type Subfolder = {
+  id: string;
+  name: string;
 };
 
 const ProjectOverview = () => {
@@ -53,10 +61,15 @@ const ProjectOverview = () => {
     },
   ]);
 
+  const [subfolders, setSubfolders] = useState<Subfolder[]>([]);
+  const [newSubfolderName, setNewSubfolderName] = useState("");
+  const [addingSubfolder, setAddingSubfolder] = useState(false);
+
   useEffect(() => {
     if (projectId) {
       checkAdminStatus();
       fetchProjectName();
+      fetchSubfolders();
     }
   }, [projectId]);
 
@@ -149,6 +162,61 @@ const ProjectOverview = () => {
     );
 
     setCategories(updatedCategories);
+  };
+
+  const fetchSubfolders = async () => {
+    if (!projectId) return;
+
+    const { data } = await supabase
+      .from("project_subfolders")
+      .select("id, name")
+      .eq("project_id", projectId)
+      .order("name");
+
+    if (data) setSubfolders(data);
+  };
+
+  const handleAddSubfolder = async () => {
+    if (!projectId || addingSubfolder) return;
+    const name = newSubfolderName.trim();
+    if (!name) {
+      toast.error("Bitte einen Namen eingeben");
+      return;
+    }
+
+    setAddingSubfolder(true);
+    const { error } = await supabase
+      .from("project_subfolders")
+      .insert({ project_id: projectId, name });
+
+    if (error) {
+      if (error.code === "23505") {
+        toast.error("Diesen Unterordner gibt es bereits");
+      } else {
+        toast.error("Unterordner konnte nicht erstellt werden");
+      }
+    } else {
+      toast.success(`Unterordner "${name}" erstellt`);
+      setNewSubfolderName("");
+      await fetchSubfolders();
+    }
+    setAddingSubfolder(false);
+  };
+
+  const handleDeleteSubfolder = async (subfolder: Subfolder) => {
+    if (!confirm(`Unterordner "${subfolder.name}" löschen?\n\nBereits gebuchte Stunden bleiben erhalten, verlieren aber die Unterordner-Zuordnung.`)) return;
+
+    const { error } = await supabase
+      .from("project_subfolders")
+      .delete()
+      .eq("id", subfolder.id);
+
+    if (error) {
+      toast.error("Unterordner konnte nicht gelöscht werden");
+    } else {
+      toast.success(`Unterordner "${subfolder.name}" gelöscht`);
+      await fetchSubfolders();
+    }
   };
 
   const handleQuickPhotoUpload = () => {
@@ -248,6 +316,61 @@ const ProjectOverview = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Unterordner (Arbeitsschritte) für die Zeiterfassung */}
+        <Card className="mt-4">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-6 w-6 text-primary" />
+              <CardTitle className="text-xl">Unterordner</CardTitle>
+            </div>
+            <CardDescription>
+              Arbeitsschritte für die Zeiterfassung (z.B. Zuschneiden, Montage, Oberfläche)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {subfolders.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {subfolders.map((s) => (
+                  <Badge key={s.id} variant="secondary" className="text-sm py-1.5 px-3 gap-1.5">
+                    {s.name}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSubfolder(s)}
+                        className="ml-0.5 text-muted-foreground hover:text-destructive"
+                        aria-label={`${s.name} löschen`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Noch keine Unterordner angelegt</p>
+            )}
+
+            <div className="flex gap-2">
+              <Input
+                value={newSubfolderName}
+                onChange={(e) => setNewSubfolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddSubfolder();
+                  }
+                }}
+                placeholder="z.B. Zuschneiden"
+                className="flex-1"
+              />
+              <Button onClick={handleAddSubfolder} disabled={addingSubfolder}>
+                <Plus className="h-4 w-4 mr-1" />
+                {addingSubfolder ? "Wird erstellt..." : "Hinzufügen"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Floating Action Button für Fotos */}
         <Button 
