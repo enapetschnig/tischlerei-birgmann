@@ -1,1 +1,8 @@
 project_id = "DEIN-PROJEKT-ID"
+
+# Das CRM ruft diese Funktion nur mit dem gemeinsamen Geheimnis auf, ohne JWT.
+# Ohne diese Zeile blockt das Supabase-Gateway vorher (UNAUTHORIZED_NO_AUTH_HEADER)
+# und es kommt kein einziges Bild im CRM an. Die Funktion schützt sich selbst
+# über COCKPIT_SECRET.
+[functions.wunsch-datei]
+verify_jwt = false

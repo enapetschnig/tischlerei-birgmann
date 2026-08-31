@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { OnboardingProvider } from "./contexts/OnboardingContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { InstallPromptDialog } from "./components/InstallPromptDialog";
+import { AenderungswunschKnopf } from "./components/aenderungswunsch/AenderungswunschKnopf";
 import { useOnboarding } from "./contexts/OnboardingContext";
 import { supabase } from "@/integrations/supabase/client";
 import Index from "./pages/Index";
@@ -69,6 +70,10 @@ function AppContent() {
         <Route path="/disturbances/:id" element={<DisturbanceDetail />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+
+      {/* Melde-Knopf für Seiten ohne Kopfzeile — blendet sich selbst aus,
+          sobald ein [data-seitenkopf] auf der Seite steht. */}
+      <AenderungswunschKnopf gestalt="schwebend" />
 
       {/* Install Prompt Dialog */}
       <InstallPromptDialog

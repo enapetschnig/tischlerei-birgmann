@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays, MessageSquarePlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import * as XLSX from "xlsx-js-style";
@@ -19,6 +19,8 @@ import { format } from "date-fns";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
 import LeaveManagement from "@/components/LeaveManagement";
 import TimeAccountManagement from "@/components/TimeAccountManagement";
+import { AenderungswuenscheListe } from "@/components/aenderungswunsch/AenderungswuenscheListe";
+import { NeuerungenPflege } from "@/components/neuerungen/NeuerungenPflege";
 import {
   DEFAULT_WORK_TIME_SETTINGS,
   dayNetMinutes,
@@ -962,6 +964,18 @@ export default function Admin() {
             Zeitkonten & Zeitausgleich
           </h2>
           <TimeAccountManagement profiles={profiles.filter(p => p.is_active)} />
+        </section>
+
+        {/* ===== ÄNDERUNGSWÜNSCHE ===== */}
+        <section>
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <MessageSquarePlus className="h-6 w-6" />
+            Änderungswünsche
+          </h2>
+          <div className="space-y-6">
+            <NeuerungenPflege />
+            <AenderungswuenscheListe />
+          </div>
         </section>
 
         {/* ===== EINSTELLUNGEN SEKTION ===== */}

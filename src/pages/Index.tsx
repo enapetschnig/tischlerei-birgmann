@@ -19,6 +19,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import NotificationBell from "@/components/NotificationBell";
+import { AenderungswunschKnopf } from "@/components/aenderungswunsch/AenderungswunschKnopf";
+import { ErledigteWuensche } from "@/components/aenderungswunsch/ErledigteWuensche";
+import { NeuerungenBanner } from "@/components/neuerungen/NeuerungenBanner";
 
 type Project = {
   id: string;
@@ -227,7 +230,7 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b bg-card sticky top-0 z-50 shadow-sm">
+      <header className="border-b bg-card sticky top-0 z-50 shadow-sm" data-seitenkopf>
         <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4">
           <div className="flex justify-between items-center gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -239,10 +242,11 @@ export default function Index() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+            <AenderungswunschKnopf gestalt="kopf" />
             <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" data-bildschirmfoto="aus">
                   <UserIcon className="h-4 w-4 mr-2" />
                   <span className="hidden sm:inline">Menü</span>
                 </Button>
@@ -275,6 +279,12 @@ export default function Index() {
 
       {/* Main Content */}
       <main className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
+        {/* Rückmeldung auf eigene Meldungen — für alle */}
+        <ErledigteWuensche />
+
+        {/* "Das ist neu" — Kundenentscheid 28.08.2026: nur Administratoren */}
+        {user && isAdmin && <NeuerungenBanner userId={user.id} />}
+
         <div className="mb-6 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
             {isAdmin ? "Admin Dashboard" : "Mein Dashboard"}
