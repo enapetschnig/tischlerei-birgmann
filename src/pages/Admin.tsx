@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import EmployeeDocumentsManager from "@/components/EmployeeDocumentsManager";
 import LeaveManagement from "@/components/LeaveManagement";
+import AdminAbsenceEntry from "@/components/AdminAbsenceEntry";
 import TimeAccountManagement from "@/components/TimeAccountManagement";
 import { AenderungswuenscheListe } from "@/components/aenderungswunsch/AenderungswuenscheListe";
 import { NeuerungenPflege } from "@/components/neuerungen/NeuerungenPflege";
@@ -134,6 +135,9 @@ export default function Admin() {
   const [regiereportEmail, setRegiereportEmail] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
+
+  // Zaehler: nach dem Eintragen einer Abwesenheit die Urlaubsliste neu laden
+  const [leaveRefresh, setLeaveRefresh] = useState(0);
 
   // Regelarbeitszeiten (Mo-Fr), admin-einstellbar
   const [workTimes, setWorkTimes] = useState<WorkTimeSettings>({ ...DEFAULT_WORK_TIME_SETTINGS });
@@ -954,7 +958,16 @@ export default function Admin() {
             <Calendar className="h-6 w-6" />
             Urlaubsverwaltung
           </h2>
-          <LeaveManagement profiles={profiles.filter(p => p.is_active)} />
+          <div className="space-y-6">
+            <AdminAbsenceEntry
+              profiles={profiles.filter(p => p.is_active)}
+              onSaved={() => setLeaveRefresh(n => n + 1)}
+            />
+            <LeaveManagement
+              key={leaveRefresh}
+              profiles={profiles.filter(p => p.is_active)}
+            />
+          </div>
         </section>
 
         {/* ===== ZEITKONTO ===== */}
