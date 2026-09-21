@@ -312,6 +312,7 @@ export default function Employees() {
     const w = wochenstunden ?? 40;
     const config: Record<number, { label: string; className: string }> = {
       40: { label: "40 Std. Vollzeit", className: "bg-primary/15 text-primary border-primary/30" },
+      38.5: { label: "38,5 Std. Vollzeit", className: "bg-primary/15 text-primary border-primary/30" },
       32: { label: "32 Std. Mi frei", className: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300" },
       20: { label: "20 Std. Teilzeit", className: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300" },
       10: { label: "10 Std. Geringfügig", className: "bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300" },
@@ -518,13 +519,14 @@ export default function Employees() {
                         <Label className="text-sm font-semibold text-primary">Arbeitszeitmodell *</Label>
                         <Select
                           value={String(formData.wochenstunden ?? 40)}
-                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseFloat(v) })}
                         >
                           <SelectTrigger className="mt-1.5">
                             <SelectValue placeholder="Wählen..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr, 06:30–15:30)</SelectItem>
+                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                            <SelectItem value="38.5">38,5 Std. – Vollzeit (Mo–Fr)</SelectItem>
                             <SelectItem value="32">32 Std. – Teilzeit (Mo/Di/Do/Fr, Mi frei)</SelectItem>
                             <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
                             <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
@@ -789,13 +791,14 @@ export default function Employees() {
               <Label className="text-sm font-semibold text-primary">Arbeitszeitmodell *</Label>
               <Select
                 value={String(newEmployee.wochenstunden)}
-                onValueChange={(v) => setNewEmployee({ ...newEmployee, wochenstunden: parseInt(v) })}
+                onValueChange={(v) => setNewEmployee({ ...newEmployee, wochenstunden: parseFloat(v) })}
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
+                  <SelectItem value="38.5">38,5 Std. – Vollzeit (Mo–Fr)</SelectItem>
                   <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
                   <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
                   <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>

@@ -24,11 +24,16 @@ import { AenderungswuenscheListe } from "@/components/aenderungswunsch/Aenderung
 import { NeuerungenPflege } from "@/components/neuerungen/NeuerungenPflege";
 import {
   DEFAULT_WORK_TIME_SETTINGS,
+  SCHEDULED_MODELS,
   dayNetMinutes,
   formatMinutesAsHours,
+  formatModelHours,
   invalidateWorkTimeSettings,
   loadWorkTimeSettings,
+  modelKey,
+  weekNetMinutes,
   type DayWorkTime,
+  type ModelWorkTimeSettings,
   type WorkTimeSettings,
 } from "@/lib/workingHours";
 
@@ -139,8 +144,9 @@ export default function Admin() {
   // Zaehler: nach dem Eintragen einer Abwesenheit die Urlaubsliste neu laden
   const [leaveRefresh, setLeaveRefresh] = useState(0);
 
-  // Regelarbeitszeiten (Mo-Fr), admin-einstellbar
-  const [workTimes, setWorkTimes] = useState<WorkTimeSettings>({ ...DEFAULT_WORK_TIME_SETTINGS });
+  // Regelarbeitszeiten (Mo-Fr) je Arbeitszeitmodell, admin-einstellbar
+  const [workTimes, setWorkTimes] = useState<ModelWorkTimeSettings>({});
+  const [workModel, setWorkModel] = useState<number>(40);
   const [savingWorkTimes, setSavingWorkTimes] = useState(false);
 
   const loadRegelarbeitszeiten = useCallback(async () => {
@@ -149,27 +155,43 @@ export default function Admin() {
     setWorkTimes({ ...settings });
   }, []);
 
+  const currentWeek: WorkTimeSettings = workTimes[modelKey(workModel)] ?? DEFAULT_WORK_TIME_SETTINGS;
+
   const updateWorkDay = (day: number, updates: Partial<DayWorkTime>) => {
-    setWorkTimes(prev => ({ ...prev, [day]: { ...prev[day], ...updates } }));
+    const key = modelKey(workModel);
+    setWorkTimes(prev => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? DEFAULT_WORK_TIME_SETTINGS), [day]: { ...(prev[key] ?? DEFAULT_WORK_TIME_SETTINGS)[day], ...updates } },
+    }));
   };
 
   const saveRegelarbeitszeiten = async () => {
-    for (let d = 1; d <= 5; d++) {
-      const day = workTimes[d];
-      if (!day?.start || !day?.end) {
-        toast({ variant: "destructive", title: "Fehler", description: "Beginn und Ende müssen für alle Tage gesetzt sein." });
-        return;
-      }
-      if (dayNetMinutes(day) <= 0) {
-        toast({ variant: "destructive", title: "Fehler", description: `${WEEKDAY_LABELS[d]}: Netto-Arbeitszeit muss größer als 0 sein.` });
-        return;
+    for (const m of SCHEDULED_MODELS) {
+      const week = workTimes[modelKey(m)];
+      if (!week) continue;
+      for (let d = 1; d <= 5; d++) {
+        const day = week[d];
+        if (m === 32 && d === 3) continue; // Mittwoch im 32h-Modell ist fix frei
+        if (!day?.start || !day?.end) {
+          toast({ variant: "destructive", title: "Fehler", description: `${formatModelHours(m)} Std.: Beginn und Ende müssen für alle Tage gesetzt sein.` });
+          return;
+        }
+        if (dayNetMinutes(day) <= 0) {
+          toast({ variant: "destructive", title: "Fehler", description: `${formatModelHours(m)} Std., ${WEEKDAY_LABELS[d]}: Netto-Arbeitszeit muss größer als 0 sein.` });
+          return;
+        }
       }
     }
 
     setSavingWorkTimes(true);
     try {
-      const payload: Record<string, DayWorkTime> = {};
-      for (let d = 1; d <= 5; d++) payload[String(d)] = workTimes[d];
+      const payload: Record<string, Record<string, DayWorkTime>> = {};
+      for (const m of SCHEDULED_MODELS) {
+        const week = workTimes[modelKey(m)];
+        if (!week) continue;
+        payload[modelKey(m)] = {};
+        for (let d = 1; d <= 5; d++) payload[modelKey(m)][String(d)] = week[d];
+      }
 
       const { error } = await supabase
         .from("app_settings")
@@ -1005,11 +1027,37 @@ export default function Admin() {
                 Regelarbeitszeiten
               </CardTitle>
               <CardDescription>
-                Standard-Arbeitszeiten pro Wochentag. Diese werden in der Zeiterfassung als
-                "Regelarbeitszeit" vorgeschlagen und bestimmen die Tagessollstunden.
+                Standard-Arbeitszeiten pro Wochentag, getrennt je Arbeitszeitmodell. Diese werden in der
+                Zeiterfassung als "Regelarbeitszeit" vorgeschlagen und bestimmen die Tagessollstunden.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Modell-Auswahl */}
+              <div className="flex flex-wrap gap-2">
+                {SCHEDULED_MODELS.map((m) => {
+                  const week = workTimes[modelKey(m)];
+                  const sum = week ? weekNetMinutes(week) - (m === 32 && week[3] ? dayNetMinutes(week[3]) : 0) : 0;
+                  const passt = Math.abs(sum - m * 60) < 1;
+                  return (
+                    <Button
+                      key={m}
+                      type="button"
+                      variant={workModel === m ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setWorkModel(m)}
+                      className="gap-2"
+                    >
+                      {formatModelHours(m)} Std.
+                      {!passt && week && (
+                        <span className="text-xs opacity-80" title="Wochensumme weicht vom Modell ab">
+                          ({formatMinutesAsHours(sum)})
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
+              </div>
+
               {/* Kopfzeile (nur Desktop) */}
               <div className="hidden sm:grid sm:grid-cols-[90px_1fr_1fr_1fr_1fr_70px] gap-2 text-xs text-muted-foreground font-medium px-1">
                 <span>Tag</span>
@@ -1020,8 +1068,17 @@ export default function Admin() {
                 <span className="text-right">Netto</span>
               </div>
               {[1, 2, 3, 4, 5].map((d) => {
-                const day = workTimes[d];
+                const day = currentWeek[d];
                 if (!day) return null;
+                if (workModel === 32 && d === 3) {
+                  return (
+                    <div key={d} className="grid grid-cols-2 sm:grid-cols-[90px_1fr_70px] gap-2 items-center border-b pb-3 sm:border-0 sm:pb-0">
+                      <span className="text-sm font-medium">{WEEKDAY_LABELS[d]}</span>
+                      <span className="text-sm text-muted-foreground">frei (im 32-Stunden-Modell fix)</span>
+                      <span className="text-sm font-semibold text-right col-span-2 sm:col-span-1">0:00 h</span>
+                    </div>
+                  );
+                }
                 return (
                   <div key={d} className="grid grid-cols-2 sm:grid-cols-[90px_1fr_1fr_1fr_1fr_70px] gap-2 items-center border-b pb-3 sm:border-0 sm:pb-0">
                     <span className="text-sm font-medium col-span-2 sm:col-span-1">{WEEKDAY_LABELS[d]}</span>
@@ -1068,12 +1125,21 @@ export default function Admin() {
                 );
               })}
               <div className="flex items-center justify-between pt-2 border-t">
-                <span className="text-sm text-muted-foreground">
-                  Wochensumme (Vollzeit):{" "}
-                  <strong>
-                    {formatMinutesAsHours([1, 2, 3, 4, 5].reduce((sum, d) => sum + dayNetMinutes(workTimes[d] || { start: "0:00", end: "0:00", pauseVormittag: 0, pauseMittag: 0 }), 0))} h
-                  </strong>
-                </span>
+                {(() => {
+                  const sum = weekNetMinutes(currentWeek) - (workModel === 32 && currentWeek[3] ? dayNetMinutes(currentWeek[3]) : 0);
+                  const diff = sum - workModel * 60;
+                  return (
+                    <span className="text-sm text-muted-foreground">
+                      Wochensumme ({formatModelHours(workModel)} Std.-Modell):{" "}
+                      <strong className={Math.abs(diff) >= 1 ? "text-destructive" : ""}>
+                        {formatMinutesAsHours(sum)} h
+                      </strong>
+                      {Math.abs(diff) >= 1 && (
+                        <span className="text-destructive"> · {diff > 0 ? "+" : "−"}{formatMinutesAsHours(Math.abs(diff))} h zum Modell</span>
+                      )}
+                    </span>
+                  );
+                })()}
                 <Button onClick={saveRegelarbeitszeiten} disabled={savingWorkTimes}>
                   <Save className="h-4 w-4 mr-2" />
                   {savingWorkTimes ? "Speichert..." : "Speichern"}
