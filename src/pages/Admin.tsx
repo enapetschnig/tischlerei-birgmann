@@ -23,11 +23,13 @@ import TimeAccountManagement from "@/components/TimeAccountManagement";
 import { AenderungswuenscheListe } from "@/components/aenderungswunsch/AenderungswuenscheListe";
 import { NeuerungenPflege } from "@/components/neuerungen/NeuerungenPflege";
 import {
+  ALL_MODELS,
   DEFAULT_WORK_TIME_SETTINGS,
   SCHEDULED_MODELS,
   dayNetMinutes,
   formatMinutesAsHours,
   formatModelHours,
+  getWorkModelLabel,
   invalidateWorkTimeSettings,
   loadWorkTimeSettings,
   modelKey,
@@ -92,6 +94,7 @@ interface Employee {
   schuhgroesse: string | null;
   notizen: string | null;
   land: string | null;
+  wochenstunden: number | null;
 }
 
 const calculateExportHours = (entry: { start_time: string; end_time: string; stunden: number }): number => {
@@ -1245,16 +1248,18 @@ export default function Admin() {
                         <Label>Arbeitszeitmodell</Label>
                         <Select
                           value={String(formData.wochenstunden ?? 40)}
-                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseInt(v) })}
+                          onValueChange={(v) => setFormData({ ...formData, wochenstunden: parseFloat(v) })}
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="40">40 Std. – Vollzeit (Mo–Fr)</SelectItem>
-                            <SelectItem value="32">32 Std. – Teilzeit (Mi frei)</SelectItem>
-                            <SelectItem value="20">20 Std. – Teilzeit (flexibel)</SelectItem>
-                            <SelectItem value="10">10 Std. – Geringfügig (flexibel)</SelectItem>
+                            {/* Aus der gemeinsamen Modell-Liste, damit neue Modelle (z.B. 38,5) automatisch erscheinen */}
+                            {ALL_MODELS.map((m) => (
+                              <SelectItem key={m} value={String(m)}>
+                                {getWorkModelLabel(m)}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
