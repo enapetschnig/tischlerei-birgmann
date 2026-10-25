@@ -1,3 +1,4 @@
+import { ohneSkripte } from "@/lib/druckfenster";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -333,7 +334,7 @@ export default function InvoiceDetail() {
       const html = decodeURIComponent(escape(atob(data.pdf)));
       const printWindow = window.open("", "_blank");
       if (printWindow) {
-        printWindow.document.write(html);
+        printWindow.document.write(ohneSkripte(html));
         printWindow.document.close();
         setTimeout(() => printWindow.print(), 500);
       }
