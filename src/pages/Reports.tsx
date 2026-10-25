@@ -156,6 +156,12 @@ const Reports = () => {
     return data.publicUrl;
   };
 
+  // Einfacher HTML-Escape — Projekt-/Tätigkeitstexte kommen aus Nutzereingaben
+  // und landen im Export-HTML.
+  const esc = (s: unknown) =>
+    String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
   const exportToPDF = async () => {
     setExporting(true);
     
@@ -169,7 +175,7 @@ const Reports = () => {
         <html>
         <head>
           <meta charset="utf-8">
-          <title>Stundenauswertung - ${projectName}</title>
+          <title>Stundenauswertung - ${esc(projectName)}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             .brand-logo { height: 50px; width: auto; display: block; margin-bottom: 16px; }
@@ -186,10 +192,10 @@ const Reports = () => {
         </head>
         <body>
           <img class="brand-logo" src="${window.location.origin}/birgmann-logo.png" alt="Tischlerei Birgmann" />
-          <h1>Stundenauswertung - ${projectName}</h1>
+          <h1>Stundenauswertung - ${esc(projectName)}</h1>
           <div class="summary">
             <h2>Zusammenfassung</h2>
-            <p><strong>Projekt:</strong> ${projectName}</p>
+            <p><strong>Projekt:</strong> ${esc(projectName)}</p>
             <p><strong>Anzahl Einträge:</strong> ${timeEntries.length}</p>
             <p><strong>Gesamtstunden:</strong> <span class="total">${totalHours.toFixed(2)} h</span></p>
             <p><strong>Erstellt am:</strong> ${new Date().toLocaleDateString('de-DE', { 
@@ -216,11 +222,11 @@ const Reports = () => {
               ${timeEntries.map(entry => `
                 <tr>
                   <td>${new Date(entry.datum).toLocaleDateString('de-DE')}</td>
-                  <td>${entry.profiles ? `${entry.profiles.vorname} ${entry.profiles.nachname}` : 'Unbekannt'}</td>
-                  <td>${entry.projects?.name || 'Unbekanntes Projekt'}</td>
-                  <td>${entry.taetigkeit}</td>
+                  <td>${esc(entry.profiles ? `${entry.profiles.vorname} ${entry.profiles.nachname}` : 'Unbekannt')}</td>
+                  <td>${esc(entry.projects?.name || 'Unbekanntes Projekt')}</td>
+                  <td>${esc(entry.taetigkeit)}</td>
                   <td><strong>${entry.stunden} h</strong></td>
-                  <td>${entry.notizen || '-'}</td>
+                  <td>${esc(entry.notizen || '-')}</td>
                 </tr>
               `).join('')}
             </tbody>
