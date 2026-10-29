@@ -30,7 +30,8 @@ dist-ssr
 .vercel
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/rules/
 
 # Supabase local temp files
 supabase/.temp/
