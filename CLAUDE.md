@@ -86,9 +86,9 @@
 - Rechnungs- und Stundenauswertungs-Druckfenster: Nutzertexte immer escapen (`esc()`, `ohneSkripte()`, 25.10.2026).
 
 ## Wissen nach Thema
-Hier gibt es (noch) keine Dateien unter `.claude/rules/` – der Ordner `.claude/` steht in `.gitignore`. Das Wissen steht
-deshalb vollständig in dieser Datei; solange `.claude/` ignoriert wird, neues Wissen hier
-(Abschnitte oben) ergänzen statt in `.claude/rules/`. Verlauf und Roboter-Protokolle: `JOURNAL.md` – nie ganz lesen, gezielt per grep
+- `.claude/rules/supabase-protokolle.md` – bekannte, harmlose Einträge in den Supabase-Fehlerprotokollen (z. B. `cron.job`).
+
+`.claude/rules/` ist seit dfc1a7d im Repo (nur `.claude/*` sonst ignoriert). Verlauf und Roboter-Protokolle: `JOURNAL.md` – nie ganz lesen, gezielt per grep
 suchen.
 
 ## Wissen ablegen (für jede KI – auch den Roboter)
