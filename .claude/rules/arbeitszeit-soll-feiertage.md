@@ -24,3 +24,12 @@ paths:
 - **12.11.2026 (Nachprüfung)**: Flexible Modelle (20/10 h) haben Regelarbeitszeit 0 – Abwesenheit (von–bis und
   Einzeltag, Zeiterfassung + Urlaubsverwaltung) rechnet deshalb über `getAbsenceDayHours` (Wochenstunden / 5 je
   Werktag, sonst Regelarbeitszeit). Für Abwesenheits-Tage nie direkt `getNormalWorkingHours` nehmen.
+- **12.11.2026 (Petra, Scan der Stundenauswertung)**: „1 Zeile soll die gesamte Arbeitszeit des Tages + Pause notiert
+  sein / Nächste Zeilen Stunden (nur die Menge) + Projekt / Zum Schluss die gesamte Zeit des Tages“, „WIR BRAUCHEN NUR
+  STUNDEN VOM PROJEKT“. → Tagesblock in `HoursReport.tsx` (`summarizeDay`): von–bis (früheste/späteste Zeit) + Pause
+  gesamt, je Projekt nur Stunden (nach Beginn sortiert, Ort/Tätigkeit klein darunter), Tagessumme mit ZA; reiner
+  Abwesenheitstag = eine Zeile. Admin-Stift neben der Tageszahl (keine eigene Spalte, passt aufs Handy). Excel-Layout
+  unverändert.
+- **Stunden immer aus `stunden` (gebucht), nie aus Beginn/Ende neu rechnen.** Die Zeiterfassung schlägt die ganze
+  Tagespause dem ersten Eintrag zu; die Stundenauswertung zog bis 12.11.2026 pauschal 12–13 Uhr ab und lag an 63 Tagen
+  (Juni–Nov.) daneben, netto 30,75 h zu wenig – ZA dort zu niedrig, Meine Stunden/Monatsabschluss waren richtig.

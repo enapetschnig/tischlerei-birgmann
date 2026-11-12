@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -22,23 +22,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getHolidayName, getNormalWorkingHours, getWorkModelLabel, isAbsenceActivity, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
 
-// Calculate hours directly from start/end times with automatic 12:00-13:00 lunch break
-const calculateHoursFromTimes = (entry: { start_time: string; end_time: string; stunden: number }): number => {
-  if (!entry.start_time || !entry.end_time) return entry.stunden;
-  const [startH, startM] = entry.start_time.split(":").map(Number);
-  const [endH, endM] = entry.end_time.split(":").map(Number);
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-  let totalMinutes = endMinutes - startMinutes;
-  if (totalMinutes <= 0) return entry.stunden;
-  // Automatic lunch break: subtract overlap with 12:00-13:00
-  if (startMinutes < 13 * 60 && endMinutes > 12 * 60) {
-    const overlapStart = Math.max(startMinutes, 12 * 60);
-    const overlapEnd = Math.min(endMinutes, 13 * 60);
-    totalMinutes -= (overlapEnd - overlapStart);
-  }
-  return totalMinutes / 60;
-};
+/**
+ * Die gebuchten Stunden stehen im Eintrag – genau so, wie der Mitarbeiter sie
+ * erfasst hat, und genau so, wie "Meine Stunden" und der Monatsabschluss sie
+ * zeigen (`calculateMonthBalance`).
+ *
+ * Bis 12.11.2026 wurde hier stattdessen aus Beginn/Ende neu gerechnet und dabei
+ * pauschal 12:00–13:00 als Pause abgezogen. Weil die Zeiterfassung die Pause
+ * dem ERSTEN Eintrag des Tages zuschlägt, kam dabei etwas anderes heraus als
+ * gebucht: Zeile 1 zeigte z. B. 2,50 h statt 1,50 h. 172 von 606 Zeilen und 63
+ * Tage waren betroffen (meist zu wenig, bis zu 1 h pro Tag; netto 30,75 h).
+ */
+const entryHours = (entry: { stunden: number }): number => Number(entry.stunden) || 0;
+
+/** "06:00:00" -> "06:00" */
+const hhmm = (zeit?: string | null): string => (zeit ? zeit.substring(0, 5) : "");
 
 interface TimeEntry {
   id: string;
@@ -68,6 +66,32 @@ interface Project {
   adresse?: string;
   plz?: string;
 }
+
+/**
+ * Ein Tag in der Stundenauswertung (Petra 12.11.2026): oben Arbeitszeit von–bis
+ * + Pause, darunter je Projekt nur die Stunden, unten die Tagessumme.
+ * Einträge kommen nach Datum sortiert aus der DB, innerhalb des Tages aber in
+ * Anlegereihenfolge – deshalb hier nach Beginn sortieren.
+ */
+const summarizeDay = (dayEntries: TimeEntry[]) => {
+  const sorted = [...dayEntries].sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
+  const starts = sorted.map((e) => e.start_time).filter(Boolean);
+  const ends = sorted.map((e) => e.end_time).filter(Boolean);
+  const pauseMinutes = sorted.reduce((sum, e) => sum + (e.pause_minutes || 0), 0);
+  // Feste Pause (von–bis) nur zeigen, wenn genau eine erfasst ist – sonst die Minuten
+  const pausenMitZeit = sorted.filter((e) => e.pause_start && e.pause_end);
+  const pauseText = pausenMitZeit.length === 1
+    ? `${hhmm(pausenMitZeit[0].pause_start)} – ${hhmm(pausenMitZeit[0].pause_end)}`
+    : pauseMinutes > 0 ? `${pauseMinutes} Min.` : "";
+  return {
+    sorted,
+    start: starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : "",
+    end: ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : "",
+    pauseText,
+    totalHours: sorted.reduce((sum, e) => sum + entryHours(e), 0),
+    absenceLabel: sorted.every((e) => isAbsenceActivity(e.taetigkeit)) ? sorted[0]?.taetigkeit?.trim() || "" : "",
+  };
+};
 
 const monthNames = [
   "Jänner", "Februar", "März", "April", "Mai", "Juni",
@@ -194,7 +218,7 @@ export default function HoursReport() {
     const normalHours = isHoliday(date)
       ? timeEntries
           .filter((e) => isSameDay(parseISO(e.datum), date) && isAbsenceActivity(e.taetigkeit))
-          .reduce((sum, e) => sum + calculateHoursFromTimes(e), 0)
+          .reduce((sum, e) => sum + entryHours(e), 0)
       : getNormalWorkingHours(date, employeeWochenstunden);
     return totalHours - normalHours;
   };
@@ -211,14 +235,14 @@ export default function HoursReport() {
   };
 
   const monthDays = generateMonthDays();
-  const totalHours = timeEntries.reduce((sum, entry) => sum + calculateHoursFromTimes(entry), 0);
+  const totalHours = timeEntries.reduce((sum, entry) => sum + entryHours(entry), 0);
   // ZA-Differenz pro TAG berechnen (Tages-Soll wird einmal pro Tag abgezogen, nicht pro Eintrag).
   // Sonst werden bei mehreren Einträgen am selben Tag (z.B. Werkstatt + Baustelle) die Sollstunden mehrfach abgezogen.
   const totalDifference = (() => {
     const dayMap = new Map<string, number>();
     timeEntries.forEach((entry) => {
       const key = entry.datum;
-      dayMap.set(key, (dayMap.get(key) || 0) + calculateHoursFromTimes(entry));
+      dayMap.set(key, (dayMap.get(key) || 0) + entryHours(entry));
     });
     let sum = 0;
     dayMap.forEach((dayHours, datum) => {
@@ -273,7 +297,7 @@ export default function HoursReport() {
     const daysInMonth = new Date(year, month, 0).getDate();
     for (let day = 1; day <= daysInMonth; day++) {
       const dayDate = new Date(year, month - 1, day);
-      const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), dayDate));
+      const dayEntries = summarizeDay(timeEntries.filter((e) => isSameDay(parseISO(e.datum), dayDate))).sorted;
 
       if (dayEntries.length === 0) {
         const holidayName = getHolidayName(dayDate);
@@ -302,7 +326,7 @@ export default function HoursReport() {
             const actualMorningEnd = lunchBreak?.start || "";
             const actualAfternoonStart = lunchBreak?.end || "";
             const actualPauseText = entry.pause_minutes && entry.pause_minutes > 0 && lunchBreak ? `${lunchBreak.start} - ${lunchBreak.end}` : "";
-            const calcHours = calculateHoursFromTimes(entry);
+            const calcHours = entryHours(entry);
             // ZA pro Eintrag nur bei Einzeltagen; bei mehreren Einträgen steht die ZA in der Tagessumme
             const diff = dayEntries.length === 1 ? calculateDifference(dayDate, calcHours) : 0;
             const diffText = diff !== 0 ? diff.toFixed(2) : "";
@@ -319,7 +343,7 @@ export default function HoursReport() {
           }
         });
         if (dayEntries.length > 1) {
-          const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
+          const dayTotalHours = dayEntries.reduce((sum, e) => sum + entryHours(e), 0);
           const dayTotalDiff = calculateDifference(dayDate, dayTotalHours);
           if (includeZA) {
             worksheetData.push(["", "", "", "", "", "Tagessumme:", dayTotalHours.toFixed(2), dayTotalDiff !== 0 ? dayTotalDiff.toFixed(2) : "", "", "", "", ""]);
@@ -395,6 +419,12 @@ export default function HoursReport() {
     toast({ title: "Excel exportiert", description: "Datei wurde heruntergeladen" });
   };
 
+  const zaText = (diff: number) => diff !== 0 && (
+    <span className={cn("font-medium whitespace-nowrap", diff > 0 && "text-green-600", diff < 0 && "text-destructive")}>
+      {diff > 0 ? "+" : ""}{diff.toFixed(2)} h
+    </span>
+  );
+
   return (
     <div className="container mx-auto p-4 space-y-6">
       <div className="flex items-center gap-4">
@@ -443,7 +473,7 @@ export default function HoursReport() {
                 </DropdownMenu>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 px-3 sm:px-6">
               <div className="flex flex-col sm:flex-row gap-3">
                 {isAdmin && (
                   <Select value={selectedUserId} onValueChange={setSelectedUserId}>
@@ -487,133 +517,128 @@ export default function HoursReport() {
                   </div>
 
                   <ScrollArea className="h-[500px] rounded-md border">
-                    <Table>
+                    {/* Am Handy weniger Innenabstand, damit Stunden und ZA ohne Wischen sichtbar bleiben */}
+                    <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[100px]">Datum</TableHead>
-                          <TableHead>Vormittag</TableHead>
-                          <TableHead>Pause</TableHead>
-                          <TableHead>Nachmittag</TableHead>
+                          <TableHead className="w-[44px] sm:w-[70px]">Datum</TableHead>
+                          <TableHead>Arbeitszeit / Projekt</TableHead>
                           <TableHead className="text-right">Stunden</TableHead>
                           <TableHead className="text-right">ZA</TableHead>
-                          <TableHead>Ort</TableHead>
-                          <TableHead>Projekt</TableHead>
-                          <TableHead>Tätigkeit</TableHead>
-                          {isAdmin && <TableHead className="w-[50px]"></TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {loading ? (
-                          <TableRow><TableCell colSpan={isAdmin ? 10 : 9} className="text-center">Lade...</TableCell></TableRow>
-                        ) : monthDays.length === 0 ? (
-                          <TableRow><TableCell colSpan={isAdmin ? 10 : 9} className="text-center">Keine Daten verfügbar</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={4} className="text-center">Lade...</TableCell></TableRow>
                         ) : (
                           monthDays.map((day) => {
-                            const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), day.date));
-                            const dayTotalHours = dayEntries.reduce((sum, e) => sum + calculateHoursFromTimes(e), 0);
-                            const dayTotalDiff = calculateDifference(day.date, dayTotalHours);
-                            const hasMultipleEntries = dayEntries.length > 1;
+                            const tag = summarizeDay(timeEntries.filter((e) => isSameDay(parseISO(e.datum), day.date)));
+                            const holidayName = getHolidayName(day.date);
+                            // Admin: Stift neben der Tageszahl statt eigener Spalte (passt so auch aufs Handy)
+                            const datumZelle = (
+                              <TableCell className="font-medium align-top">
+                                <div className="flex items-start gap-0.5">
+                                  <div className="flex flex-col">
+                                    <span>{day.dayNumber}</span>
+                                    <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
+                                  </div>
+                                  {isAdmin && tag.sorted.length > 0 && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="-mt-1 h-6 w-6 shrink-0"
+                                      title="Tag bearbeiten"
+                                      onClick={() => navigate(`/time-tracking?user_id=${selectedUserId}&date=${tag.sorted[0].datum}&return_month=${month}&return_year=${year}&return_employee=${selectedUserId}`)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            );
 
-                            if (dayEntries.length === 0) {
+                            if (tag.sorted.length === 0) {
                               return (
                                 <TableRow key={day.dayNumber} className={cn(day.isWeekend && "bg-muted/30", "text-muted-foreground")}>
-                                  <TableCell className="font-medium">
-                                    <div className="flex flex-col">
-                                      <span>{day.dayNumber}</span>
-                                      <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell colSpan={isAdmin ? 9 : 8}>
-                                    {getHolidayName(day.date) && <span className="text-sm">🎉 Feiertag – {getHolidayName(day.date)}</span>}
+                                  {datumZelle}
+                                  <TableCell colSpan={3}>
+                                    {holidayName && <span className="text-sm">🎉 Feiertag – {holidayName}</span>}
                                   </TableCell>
                                 </TableRow>
                               );
                             }
 
-                            return dayEntries.map((entry, entryIndex) => {
-                              const lunchBreak = calculateLunchBreak(entry);
-                              const calcHours = calculateHoursFromTimes(entry);
-                              const project = projects[entry.project_id];
-                              const ortIcon = entry.location_type === "baustelle" ? "🏗️" : entry.location_type === "werkstatt" ? "🔧" : "";
-                              const ortText = entry.location_type === "baustelle" ? "Baustelle" : entry.location_type === "werkstatt" ? "Werkstatt" : "";
-                              const projektName = entry.taetigkeit === "Urlaub" || entry.taetigkeit === "Krankenstand" ? entry.taetigkeit : (project?.name || "");
-                              const isFirstEntry = entryIndex === 0;
-                              const isLastEntry = entryIndex === dayEntries.length - 1;
-                              // ZA bei Einzeltagen pro Eintrag, bei Mehrfacheinträgen nur in der letzten Zeile (Tages-ZA)
-                              const diff = hasMultipleEntries ? (isLastEntry ? dayTotalDiff : 0) : calculateDifference(day.date, calcHours);
+                            const dayDiff = calculateDifference(day.date, tag.totalHours);
 
+                            // Reiner Abwesenheitstag (Urlaub, Krankenstand …): eine Zeile reicht
+                            if (tag.absenceLabel) {
                               return (
-                                <TableRow key={entry.id} className={cn(day.isWeekend && "bg-muted/30", hasMultipleEntries && !isLastEntry && "border-b-0")}>
+                                <TableRow key={day.dayNumber} className={cn(day.isWeekend && "bg-muted/30", "border-b-2")}>
+                                  {datumZelle}
                                   <TableCell className="font-medium">
-                                    {isFirstEntry && (
-                                      <div className="flex flex-col">
-                                        <span>{day.dayNumber}</span>
-                                        <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
-                                      </div>
-                                    )}
+                                    {tag.absenceLabel}
+                                    {holidayName && <span className="ml-2 text-xs text-muted-foreground">🎉 {holidayName}</span>}
                                   </TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center gap-1">
-                                      <span>{entry.start_time?.substring(0, 5)}</span><span>-</span><span>{"12:00"}</span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    {lunchBreak && entry.pause_minutes > 0 && (<span className="text-sm">{lunchBreak.start} - {lunchBreak.end}</span>)}
-                                  </TableCell>
-                                  <TableCell>
-                                    {lunchBreak && (
-                                      <div className="flex items-center gap-1">
-                                        <span>{lunchBreak.end}</span><span>-</span><span>{entry.end_time?.substring(0, 5)}</span>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right font-medium">
-                                    {calcHours.toFixed(2)} h
-                                    {hasMultipleEntries && isLastEntry && (
-                                      <div className="text-xs text-primary font-bold mt-1">Σ {dayTotalHours.toFixed(2)} h</div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {diff !== 0 && (
-                                      <span className={cn("font-medium", diff > 0 && "text-green-600", diff < 0 && "text-destructive")}>
-                                        {diff > 0 ? "+" : ""}{diff.toFixed(2)} h
-                                      </span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <span className="flex items-center gap-1"><span>{ortIcon}</span><span className="text-xs">{ortText}</span></span>
-                                  </TableCell>
-                                  <TableCell className="max-w-[150px] truncate">{projektName}</TableCell>
-                                  <TableCell className="max-w-[150px] truncate">{entry.taetigkeit}</TableCell>
-                                  {isAdmin && (
-                                    <TableCell>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigate(`/time-tracking?user_id=${selectedUserId}&date=${entry.datum}&return_month=${month}&return_year=${year}&return_employee=${selectedUserId}`);
-                                        }}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TableCell>
-                                  )}
+                                  <TableCell className="text-right font-bold tabular-nums whitespace-nowrap">{tag.totalHours.toFixed(2)} h</TableCell>
+                                  <TableCell className="text-right">{zaText(dayDiff)}</TableCell>
                                 </TableRow>
                               );
-                            });
+                            }
+
+                            return (
+                              <Fragment key={day.dayNumber}>
+                                {/* 1. Zeile: Arbeitszeit des Tages + Pause */}
+                                <TableRow className="border-b-0 bg-muted/40">
+                                  {datumZelle}
+                                  <TableCell>
+                                    <span className="font-semibold tabular-nums">{hhmm(tag.start)} – {hhmm(tag.end)}</span>
+                                    <span className="block text-sm text-muted-foreground sm:inline sm:ml-3">{tag.pauseText ? `Pause ${tag.pauseText}` : "ohne Pause"}</span>
+                                    {holidayName && <div className="text-xs text-muted-foreground">🎉 Feiertag – {holidayName}</div>}
+                                  </TableCell>
+                                  <TableCell />
+                                  <TableCell />
+                                </TableRow>
+                                {/* Je Projekt nur die Stunden */}
+                                {tag.sorted.map((entry) => {
+                                  const project = entry.project_id ? projects[entry.project_id] : undefined;
+                                  const istAbwesenheit = isAbsenceActivity(entry.taetigkeit);
+                                  const istRegie = entry.disturbance_id != null || entry.taetigkeit?.startsWith("Störungseinsatz");
+                                  const ort = istAbwesenheit ? "" : entry.location_type === "baustelle" ? "🏗️ Baustelle" : entry.location_type === "werkstatt" ? "🔧 Werkstatt" : "";
+                                  const titel = (istAbwesenheit ? entry.taetigkeit : project?.name) || (istRegie ? "Regiebericht" : entry.taetigkeit) || "Ohne Projekt";
+                                  const details = [ort, titel !== entry.taetigkeit ? entry.taetigkeit : ""].filter(Boolean).join(" · ");
+                                  return (
+                                    <TableRow key={entry.id} className={cn("border-b-0", day.isWeekend && "bg-muted/30")}>
+                                      <TableCell className="py-2" />
+                                      <TableCell className="py-2">
+                                        <div className="pl-2 sm:pl-4 [overflow-wrap:anywhere]">
+                                          <div className="font-medium">{titel}</div>
+                                          {details && <div className="text-xs text-muted-foreground">{details}</div>}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="py-2 text-right tabular-nums whitespace-nowrap">{entryHours(entry).toFixed(2)} h</TableCell>
+                                      <TableCell className="py-2" />
+                                    </TableRow>
+                                  );
+                                })}
+                                {/* Zum Schluss: gesamte Zeit des Tages */}
+                                <TableRow className={cn("border-b-2", day.isWeekend && "bg-muted/30")}>
+                                  <TableCell className="py-2" />
+                                  <TableCell className="py-2 font-semibold"><div className="pl-2 sm:pl-4">Tagessumme</div></TableCell>
+                                  <TableCell className="py-2 text-right font-bold tabular-nums whitespace-nowrap border-t">{tag.totalHours.toFixed(2)} h</TableCell>
+                                  <TableCell className="py-2 text-right">{zaText(dayDiff)}</TableCell>
+                                </TableRow>
+                              </Fragment>
+                            );
                           })
                         )}
                       </TableBody>
                       <TableFooter>
                         <TableRow>
-                          <TableCell colSpan={4} className="text-right font-bold">Gesamt:</TableCell>
+                          <TableCell colSpan={2} className="text-right font-bold">Gesamt:</TableCell>
                           <TableCell className="text-right font-bold">{totalHours.toFixed(2)} h</TableCell>
                           <TableCell className={cn("text-right font-bold", totalDifference > 0 && "text-green-600", totalDifference < 0 && "text-destructive")}>
                             {totalDifference > 0 ? "+" : ""}{totalDifference.toFixed(2)} h
                           </TableCell>
-                          <TableCell colSpan={isAdmin ? 4 : 3}></TableCell>
                         </TableRow>
                       </TableFooter>
                     </Table>

@@ -17,3 +17,16 @@
 - Nach dem Deploy die App einmal neu laden (die PWA liefert sonst evtl. noch die alte Version aus).
 - Die tote Seite `/employees` (`src/pages/Employees.tsx`, Route in `src/App.tsx`) ist noch da. Nicht entfernt, weil Christoph das noch nicht freigegeben hat. Solange sie bleibt, besteht die Gefahr, dass Änderungen wieder dort statt im Admin-Bereich landen.
 - Die Antwort an Petra vom 21.09. hat auf „Mitarbeiterverwaltung → Bearbeiten“ verwiesen, also auf diese tote Seite. Richtig ist: Admin-Bereich → Mitarbeiter → Bearbeiten → Arbeitszeitmodell.
+
+## 2026-11-12 · Claude · Stundenauswertung übersichtlicher (Mail + Scan von Petra)
+
+**Wunsch:** „1 Zeile soll die gesamte Arbeitszeit des Tages + Pause notiert sein / Nächste Zeilen Stunden (nur die Menge) + Projekt / Zum Schluss die gesamte Zeit des Tages / Momentan unübersichtlich.“ Auf dem Scan (Steiner Christian, 01.10.) handschriftlich: „WIR BRAUCHEN NUR STUNDEN VOM PROJEKT“, eine Zeile mit „4.00 h“ eingekreist und „8.50 h“ als richtige Tagessumme dazugeschrieben.
+
+**Ursache „unübersichtlich“:** Je Eintrag eine Zeile mit Vormittag/Pause/Nachmittag; „Vormittag“ endete fest auf 12:00 (ergab „15:00 - 12:00“), die Einträge standen in Anlegereihenfolge statt nach Uhrzeit, und die Stunden je Zeile wurden aus Beginn/Ende mit pauschal 12–13 Uhr Pause neu gerechnet statt die gebuchten `stunden` zu nehmen.
+
+**Geändert (`src/pages/HoursReport.tsx`):**
+- Bildschirm: Spalten Datum | Arbeitszeit / Projekt | Stunden | ZA. Je Tag: Zeile „06:00 – 16:00 · Pause 60 Min.“, dann je Projekt Name + Stunden (Ort/Tätigkeit klein darunter), dann „Tagessumme“ mit ZA. Urlaub/Krankenstand-Tage eine Zeile. Admin-Stift neben der Tageszahl.
+- Stunden, Summe, ZA und Excel-Werte jetzt aus `stunden` – gleich wie Meine Stunden und Monatsabschluss. Excel-Layout sonst unverändert (Einträge jetzt nach Uhrzeit sortiert).
+- Geprüft mit lokaler Vorschau (echte Oktober-Daten Steiner Christian, Desktop + 390 px Handy): 01.10. = 8.50 h, Monat 189.25 h, ZA +14.75 h.
+
+**Auswirkung:** Die alte Rechnung lag an 63 Tagen (Juni–Nov.) daneben, netto 30,75 h zu wenig (Okt.: David Hochradl +5,25 h, Fabian Falk +4,75 h, Hans Maislinger +2,00 h, Johann Grömer +2,00 h; Sep.: Fabian Falk +4,25 h; Nov.: Fabian Falk +2,50 h). Die ZA in der Stundenauswertung steigt für diese Monate entsprechend; Meine Stunden und Monatsabschluss bleiben, wie sie waren.
