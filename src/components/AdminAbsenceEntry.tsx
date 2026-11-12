@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getDefaultWorkTimes, getNormalWorkingHours, loadWorkTimeSettings } from "@/lib/workingHours";
+import { getDefaultWorkTimes, getNormalWorkingHours, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
 import { notifyUser } from "@/lib/notifications";
 
 type Profile = {
@@ -81,9 +81,11 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
   const preview = useMemo(() => {
     if (!from || !to || to < from || !settingsReady) return null;
     const days = eachDayOfInterval({ start: toLocalDate(from), end: toLocalDate(to) });
-    if (days.length > MAX_DAYS) return { tooMany: true, working: [] as Date[], free: 0 };
-    const working = days.filter((d) => getNormalWorkingHours(d, ws) > 0);
-    return { tooMany: false, working, free: days.length - working.length };
+    if (days.length > MAX_DAYS) return { tooMany: true, working: [] as Date[], free: 0, holidays: 0 };
+    // Wochenenden, freie Tage und gesetzliche Feiertage überspringen
+    const working = days.filter((d) => getNormalWorkingHours(d, ws) > 0 && !isHoliday(d));
+    const holidays = days.filter((d) => getNormalWorkingHours(d, ws) > 0 && isHoliday(d)).length;
+    return { tooMany: false, working, free: days.length - working.length - holidays, holidays };
   }, [from, to, ws, settingsReady]);
 
   const handleSubmit = async () => {
@@ -102,7 +104,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
         title: "Keine Arbeitstage im Zeitraum",
         description: isFlexible
           ? "Für flexible Modelle (20h/10h) gibt es kein Tagessoll — bitte über die Zeiterfassung mit Stundenangabe eintragen."
-          : "Im gewählten Zeitraum liegen nur Wochenenden oder freie Tage.",
+          : "Im gewählten Zeitraum liegen nur Wochenenden, freie Tage oder Feiertage.",
       });
       return;
     }
@@ -196,7 +198,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
         </CardTitle>
         <CardDescription>
           Urlaub, Krankenstand, Weiterbildung oder Feiertag für einen Mitarbeiter über einen Zeitraum
-          eintragen. Wochenenden und freie Tage werden automatisch übersprungen.
+          eintragen. Wochenenden, freie Tage und gesetzliche Feiertage werden automatisch übersprungen.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -262,6 +264,9 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
                 )}
                 {preview.free > 0 && (
                   <span className="text-muted-foreground"> · {preview.free} freie Tage übersprungen</span>
+                )}
+                {preview.holidays > 0 && (
+                  <span className="text-muted-foreground"> · {preview.holidays} {preview.holidays === 1 ? "Feiertag" : "Feiertage"} übersprungen</span>
                 )}
                 <span className="text-muted-foreground">
                   {" "}· je {getNormalWorkingHours(preview.working[0], ws)} h

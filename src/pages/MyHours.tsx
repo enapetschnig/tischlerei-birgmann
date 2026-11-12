@@ -13,6 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { calculateMonthBalance, getHolidayName, loadWorkTimeSettings, toDateKey, type MonthBalance } from "@/lib/workingHours";
+
+const fmtH = (h: number) => h.toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtSigned = (h: number) => (h > 0.004 ? "+" : h < -0.004 ? "−" : "") + fmtH(Math.abs(h));
 
 type TimeEntry = {
   id: string;
@@ -35,6 +39,7 @@ const MyHours = () => {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalHours, setTotalHours] = useState(0);
+  const [balance, setBalance] = useState<MonthBalance | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -78,6 +83,16 @@ const MyHours = () => {
       const sum = data.reduce((acc, entry) => acc + entry.stunden, 0);
       setTotalHours(sum);
     }
+
+    // Monatssoll und Plus/Minus (gleiche Rechnung wie der Monatsabschluss im Zeitkonto)
+    await loadWorkTimeSettings();
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("wochenstunden")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const ws = Number(emp?.wochenstunden) || 40;
+    setBalance(calculateMonthBalance(year, month, ws, data || []));
     setLoading(false);
   };
 
@@ -291,6 +306,47 @@ const MyHours = () => {
               </div>
             </div>
 
+            {balance && (() => {
+              const [y, m] = selectedMonth.split("-").map(Number);
+              const todayKey = toDateKey(new Date());
+              const monthStart = `${selectedMonth}-01`;
+              const monthEnd = `${selectedMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+              const running = todayKey >= monthStart && todayKey < monthEnd;
+              const future = todayKey < monthStart;
+              const diff = running ? balance.diffToDate : balance.diff;
+              const workdayHolidays = balance.holidays.filter((h) => h.workday);
+              return (
+                <div className="mb-4 space-y-2" data-testid="monats-saldo">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs sm:text-sm text-muted-foreground">Soll im Monat</p>
+                      <p className="text-xl sm:text-2xl font-bold">{fmtH(balance.sollHours)}</p>
+                      <p className="text-xs text-muted-foreground">Std.</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-primary/10">
+                      <p className="text-xs sm:text-sm text-muted-foreground">Ist</p>
+                      <p className="text-xl sm:text-2xl font-bold text-primary">{fmtH(balance.istHours)}</p>
+                      <p className="text-xs text-muted-foreground">Std.</p>
+                    </div>
+                    <div className={`text-center p-3 rounded-lg ${future ? "bg-muted/50" : diff >= -0.004 ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"}`}>
+                      <p className="text-xs sm:text-sm text-muted-foreground">{running ? "Plus/Minus bis heute" : "Plus/Minus"}</p>
+                      <p className={`text-xl sm:text-2xl font-bold ${future ? "" : diff >= -0.004 ? "text-green-600" : "text-red-600"}`}>
+                        {future ? "–" : fmtSigned(diff)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Std.</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {running && <>Soll bis heute: {fmtH(balance.sollToDate)} Std., Ist bis heute: {fmtH(balance.istToDate)} Std. </>}
+                    Urlaub, Krankenstand und ZA zählen wie gearbeitet.
+                    {workdayHolidays.length > 0 && (
+                      <> Feiertage (schon vom Soll abgezogen): {workdayHolidays.map((h) => `${h.datum.substring(8, 10)}.${h.datum.substring(5, 7)}. ${h.name}`).join(", ")}.</>
+                    )}
+                  </p>
+                </div>
+              );
+            })()}
+
             {entries.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">
                 Keine Einträge für {new Date(selectedMonth + '-01').toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}
@@ -328,6 +384,9 @@ const MyHours = () => {
                       <TableRow key={entry.id}>
                         <TableCell className="font-medium whitespace-nowrap">
                           {new Date(entry.datum).toLocaleDateString("de-DE")}
+                          {getHolidayName(entry.datum) && (
+                            <span className="block text-xs font-normal text-muted-foreground">🎉 {getHolidayName(entry.datum)}</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 whitespace-nowrap">

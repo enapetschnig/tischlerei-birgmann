@@ -14,7 +14,7 @@ import { Clock, Plus, History, Loader2, CalendarCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, isSameDay } from "date-fns";
 import { de } from "date-fns/locale";
-import { getNormalWorkingHours, getWorkModelLabel, loadWorkTimeSettings } from "@/lib/workingHours";
+import { calculateMonthBalance, getWorkModelLabel, loadWorkTimeSettings } from "@/lib/workingHours";
 
 type Profile = {
   id: string;
@@ -191,7 +191,7 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
     // Fetch all time entries for the month
     const { data: allEntries } = await supabase
       .from("time_entries")
-      .select("user_id, datum, stunden")
+      .select("user_id, datum, stunden, taetigkeit")
       .gte("datum", startStr)
       .lte("datum", endStr);
 
@@ -218,26 +218,12 @@ export default function TimeAccountManagement({ profiles }: TimeAccountManagemen
 
       const wochenstunden = employeeMap.get(profile.id) || 40;
       const userEntries = (allEntries || []).filter(e => e.user_id === profile.id);
-      const istHours = userEntries.reduce((sum, e) => sum + (e.stunden || 0), 0);
-
-      // Soll-Stunden berechnen: für jeden Arbeitstag im Monat
-      let sollHours = 0;
-      const daysInMonth = endDate.getDate();
-      for (let d = 1; d <= daysInMonth; d++) {
-        const date = new Date(closeYear, closeMonth - 1, d);
-        const dayOfWeek = date.getDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) continue; // Wochenende
-
-        let tagesSoll = getNormalWorkingHours(date, wochenstunden);
-        // Für flexible Modelle (20h/10h) gibt getNormalWorkingHours 0 zurück
-        // Hier verwenden wir wochenstunden / 5 als Tages-Soll
-        if ((wochenstunden === 20 || wochenstunden === 10) && tagesSoll === 0) {
-          tagesSoll = wochenstunden / 5;
-        }
-        sollHours += tagesSoll;
-      }
-
-      const diff = istHours - sollHours;
+      // Gemeinsame Rechnung mit "Meine Stunden": Feiertage haben kein Soll,
+      // händisch eingetragene Feiertage zählen dort nicht doppelt.
+      const monthBalance = calculateMonthBalance(closeYear, closeMonth, wochenstunden, userEntries);
+      const istHours = monthBalance.istHours;
+      const sollHours = monthBalance.sollHours;
+      const diff = monthBalance.diff;
 
       result.push({
         userId: profile.id,

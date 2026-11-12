@@ -296,3 +296,168 @@ export function formatMinutesAsHours(minutes: number): string {
   const abs = Math.abs(minutes);
   return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
 }
+
+// ---------------------------------------------------------------------------
+// Österreichische gesetzliche Feiertage (Wunsch Petra, 12.11.2026)
+// ---------------------------------------------------------------------------
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Datum als "yyyy-MM-dd" in lokaler Zeit. */
+export function toDateKey(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+/** Ostersonntag (gregorianisch, Gauß/Meeus). */
+function easterSunday(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+const holidayCache = new Map<number, Map<string, string>>();
+
+/** Alle gesetzlichen Feiertage in Österreich für ein Jahr: "yyyy-MM-dd" -> Name. */
+export function getAustrianHolidays(year: number): Map<string, string> {
+  const cached = holidayCache.get(year);
+  if (cached) return cached;
+  const easter = easterSunday(year);
+  const plusDays = (n: number) => new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + n);
+  const list: [Date, string][] = [
+    [new Date(year, 0, 1), "Neujahr"],
+    [new Date(year, 0, 6), "Heilige Drei Könige"],
+    [plusDays(1), "Ostermontag"],
+    [new Date(year, 4, 1), "Staatsfeiertag"],
+    [plusDays(39), "Christi Himmelfahrt"],
+    [plusDays(50), "Pfingstmontag"],
+    [plusDays(60), "Fronleichnam"],
+    [new Date(year, 7, 15), "Mariä Himmelfahrt"],
+    [new Date(year, 9, 26), "Nationalfeiertag"],
+    [new Date(year, 10, 1), "Allerheiligen"],
+    [new Date(year, 11, 8), "Mariä Empfängnis"],
+    [new Date(year, 11, 25), "Christtag"],
+    [new Date(year, 11, 26), "Stefanitag"],
+  ];
+  const map = new Map<string, string>();
+  for (const [d, name] of list) map.set(toDateKey(d), name);
+  holidayCache.set(year, map);
+  return map;
+}
+
+/** Name des Feiertags oder null. Nimmt Date oder "yyyy-MM-dd". */
+export function getHolidayName(date: Date | string): string | null {
+  const key = typeof date === "string" ? date.substring(0, 10) : toDateKey(date);
+  const year = Number(key.substring(0, 4));
+  return getAustrianHolidays(year).get(key) ?? null;
+}
+
+export function isHoliday(date: Date | string): boolean {
+  return getHolidayName(date) !== null;
+}
+
+/** Abwesenheits-Tätigkeiten (ganzer Tag statt Arbeit). */
+export const ABSENCE_ACTIVITIES = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag", "Zeitausgleich"] as const;
+
+export function isAbsenceActivity(taetigkeit: string | null | undefined): boolean {
+  return (ABSENCE_ACTIVITIES as readonly string[]).includes(taetigkeit || "");
+}
+
+/** "2026-11-12" -> lokales Datum (ohne UTC-Verschiebung). */
+export function parseDateKey(key: string): Date {
+  const [y, m, d] = key.substring(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/**
+ * Tagessoll für Plus/Minus-Rechnungen (Monatsansicht, Monatsabschluss):
+ * Feiertage und Wochenenden 0, flexible Modelle (20h/10h) Wochenstunden / 5,
+ * sonst die Regelarbeitszeit des Modells.
+ */
+export function getSaldoSollHours(date: Date, wochenstunden: number = 40): number {
+  const dow = date.getDay();
+  if (dow === 0 || dow === 6) return 0;
+  if (isHoliday(date)) return 0;
+  if (isFlexibleModel(wochenstunden)) return wochenstunden / 5;
+  return getNormalWorkingHours(date, wochenstunden);
+}
+
+/**
+ * Stunden eines Tages, die für Plus/Minus zählen. An gesetzlichen Feiertagen
+ * zählen Abwesenheits-Einträge (z.B. händisch eingetragener "Feiertag") nicht –
+ * der Feiertag ist schon im Soll abgezogen. Arbeit am Feiertag zählt als Plus.
+ */
+export function getSaldoIstHours(date: Date, entries: { stunden: number | null; taetigkeit: string | null }[]): number {
+  const holiday = isHoliday(date);
+  return entries.reduce((sum, e) => {
+    if (holiday && isAbsenceActivity(e.taetigkeit)) return sum;
+    return sum + (Number(e.stunden) || 0);
+  }, 0);
+}
+
+export interface MonthBalance {
+  sollHours: number; // ganzer Monat (ohne Feiertage)
+  istHours: number; // ganzer Monat
+  diff: number; // ist - soll (ganzer Monat)
+  sollToDate: number; // Soll bis einschließlich Stichtag
+  istToDate: number; // Ist bis einschließlich Stichtag
+  diffToDate: number;
+  holidays: { datum: string; name: string; workday: boolean }[];
+}
+
+/**
+ * Monats-Soll/Ist/Plus-Minus eines Mitarbeiters. Eine Rechnung für Meine Stunden
+ * und den Monatsabschluss im Zeitkonto. `stichtag` (yyyy-MM-dd) = bis wann
+ * "bis heute" rechnet (Standard: heute).
+ */
+export function calculateMonthBalance(
+  year: number,
+  month: number, // 1-12
+  wochenstunden: number,
+  entries: { datum: string; stunden: number | null; taetigkeit: string | null }[],
+  stichtag: string = toDateKey(new Date())
+): MonthBalance {
+  const byDay = new Map<string, { stunden: number | null; taetigkeit: string | null }[]>();
+  for (const e of entries) {
+    const key = e.datum.substring(0, 10);
+    const list = byDay.get(key) || [];
+    list.push(e);
+    byDay.set(key, list);
+  }
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let sollHours = 0, istHours = 0, sollToDate = 0, istToDate = 0;
+  const holidays: MonthBalance["holidays"] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month - 1, d);
+    const key = toDateKey(date);
+    const soll = getSaldoSollHours(date, wochenstunden);
+    const ist = getSaldoIstHours(date, byDay.get(key) || []);
+    sollHours += soll;
+    istHours += ist;
+    if (key <= stichtag) {
+      sollToDate += soll;
+      istToDate += ist;
+    }
+    const name = getHolidayName(date);
+    if (name) {
+      const dow = date.getDay();
+      holidays.push({ datum: key, name, workday: dow >= 1 && dow <= 5 });
+    }
+  }
+  return {
+    sollHours, istHours, diff: istHours - sollHours,
+    sollToDate, istToDate, diffToDate: istToDate - sollToDate,
+    holidays,
+  };
+}

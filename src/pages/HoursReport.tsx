@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getNormalWorkingHours, getWorkModelLabel, loadWorkTimeSettings } from "@/lib/workingHours";
+import { getHolidayName, getNormalWorkingHours, getWorkModelLabel, isAbsenceActivity, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
 
 // Calculate hours directly from start/end times with automatic 12:00-13:00 lunch break
 const calculateHoursFromTimes = (entry: { start_time: string; end_time: string; stunden: number }): number => {
@@ -189,7 +189,13 @@ export default function HoursReport() {
   };
 
   const calculateDifference = (date: Date, totalHours: number): number => {
-    const normalHours = getNormalWorkingHours(date, employeeWochenstunden);
+    // Gesetzlicher Feiertag: kein Soll. Händisch eingetragene Abwesenheit (z.B. "Feiertag")
+    // bleibt neutral, Arbeit am Feiertag zählt voll als Plus.
+    const normalHours = isHoliday(date)
+      ? timeEntries
+          .filter((e) => isSameDay(parseISO(e.datum), date) && isAbsenceActivity(e.taetigkeit))
+          .reduce((sum, e) => sum + calculateHoursFromTimes(e), 0)
+      : getNormalWorkingHours(date, employeeWochenstunden);
     return totalHours - normalHours;
   };
 
@@ -270,7 +276,14 @@ export default function HoursReport() {
       const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), dayDate));
 
       if (dayEntries.length === 0) {
-        worksheetData.push([day, "", "", "", "", "", "", "", "", "", "", ""]);
+        const holidayName = getHolidayName(dayDate);
+        if (holidayName) {
+          worksheetData.push(includeZA
+            ? [day, "", "", "", "", "", "", "", "", "Feiertag", holidayName, ""]
+            : [day, "", "", "", "", "", "", "", "Feiertag", holidayName, "", ""]);
+        } else {
+          worksheetData.push([day, "", "", "", "", "", "", "", "", "", "", ""]);
+        }
       } else {
         dayEntries.forEach((entry, entryIndex) => {
           const lunchBreak = calculateLunchBreak(entry);
@@ -510,7 +523,9 @@ export default function HoursReport() {
                                       <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell colSpan={isAdmin ? 9 : 8}></TableCell>
+                                  <TableCell colSpan={isAdmin ? 9 : 8}>
+                                    {getHolidayName(day.date) && <span className="text-sm">🎉 Feiertag – {getHolidayName(day.date)}</span>}
+                                  </TableCell>
                                 </TableRow>
                               );
                             }

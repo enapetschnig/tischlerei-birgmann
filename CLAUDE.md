@@ -87,6 +87,7 @@
 
 ## Wissen nach Thema
 - `.claude/rules/supabase-protokolle.md` – bekannte, harmlose Einträge in den Supabase-Fehlerprotokollen (z. B. `cron.job`).
+- `.claude/rules/arbeitszeit-soll-feiertage.md` – Monatssoll/Plus-Minus, österreichische Feiertage (berechnet), Abwesenheit von–bis.
 
 `.claude/rules/` ist seit dfc1a7d im Repo (nur `.claude/*` sonst ignoriert). Verlauf und Roboter-Protokolle: `JOURNAL.md` – nie ganz lesen, gezielt per grep
 suchen.

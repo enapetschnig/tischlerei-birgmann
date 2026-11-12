@@ -24,6 +24,10 @@ import {
   timeToMinutes,
   minutesToTime,
   formatMinutesAsHours,
+  getHolidayName,
+  isHoliday,
+  parseDateKey,
+  toDateKey,
 } from "@/lib/workingHours";
 import { notifyAdmins } from "@/lib/notifications";
 import { FillRemainingHoursDialog } from "@/components/FillRemainingHoursDialog";
@@ -119,6 +123,7 @@ const TimeTracking = () => {
 
   const [absenceData, setAbsenceData] = useState({
     date: new Date().toISOString().split('T')[0],
+    dateTo: "" as string,
     type: "urlaub" as "urlaub" | "krankenstand" | "weiterbildung" | "feiertag" | "za",
     document: null as File | null,
     customHours: "" as string,
@@ -446,17 +451,56 @@ const TimeTracking = () => {
     // Im Admin-Bearbeiten-Modus wird die Abwesenheit für den Ziel-Mitarbeiter gebucht, nicht für den Admin
     const targetUserId = (isAdminEditMode && isAdmin) ? adminEditUserId! : user.id;
 
-    const { count: existingCount } = await supabase
-      .from("time_entries")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", targetUserId)
-      .eq("datum", absenceData.date);
+    // Zeitraum: Von – Bis (nur ganze Tage). Wochenenden, freie Tage und Feiertage werden übersprungen.
+    const fromKey = absenceData.date;
+    const toKey = absenceData.isFullDay && absenceData.dateTo && absenceData.dateTo > fromKey ? absenceData.dateTo : fromKey;
+    const isRange = toKey !== fromKey;
 
-    if ((existingCount ?? 0) > 0) {
+    let dayKeys: string[] = [fromKey];
+    if (isRange) {
+      dayKeys = [];
+      const cur = parseDateKey(fromKey);
+      const last = parseDateKey(toKey);
+      while (cur <= last && dayKeys.length <= 62) {
+        if (getNormalWorkingHours(cur, employeeWochenstunden) > 0 && !isHoliday(cur)) dayKeys.push(toDateKey(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+      if (dayKeys.length > 62) {
+        toast({ variant: "destructive", title: "Zeitraum zu lang", description: "Bitte höchstens 2 Monate auf einmal eintragen." });
+        setSubmittingAbsence(false);
+        return;
+      }
+      if (dayKeys.length === 0) {
+        toast({ variant: "destructive", title: "Keine Arbeitstage", description: "Im Zeitraum liegen nur Wochenenden, freie Tage oder Feiertage." });
+        setSubmittingAbsence(false);
+        return;
+      }
+    }
+
+    // Tage, an denen schon etwas gebucht ist, nicht überschreiben
+    const { data: existingRows, error: existingErr } = await supabase
+      .from("time_entries")
+      .select("datum")
+      .eq("user_id", targetUserId)
+      .gte("datum", fromKey)
+      .lte("datum", toKey);
+
+    if (existingErr) {
+      toast({ variant: "destructive", title: "Fehler", description: "Bestehende Einträge konnten nicht geprüft werden." });
+      setSubmittingAbsence(false);
+      return;
+    }
+    const bookedDays = new Set((existingRows || []).map((r) => r.datum));
+    const daysToBook = dayKeys.filter((k) => !bookedDays.has(k));
+    const skippedBooked = dayKeys.length - daysToBook.length;
+
+    if (daysToBook.length === 0) {
       toast({
         variant: "destructive",
         title: "Eintrag bereits vorhanden",
-        description: "Für diesen Tag wurden die Stunden bereits eingetragen, gehe unter Meine Stunden rein."
+        description: isRange
+          ? "An allen Arbeitstagen im Zeitraum gibt es bereits Einträge."
+          : "Für diesen Tag wurden die Stunden bereits eingetragen, gehe unter Meine Stunden rein."
       });
       setSubmittingAbsence(false);
       return;
@@ -478,31 +522,38 @@ const TimeTracking = () => {
       documentPath = fileName;
     }
 
-    const selectedDateObj = new Date(absenceData.date);
-    const automaticHours = getNormalWorkingHours(selectedDateObj, employeeWochenstunden);
-    const defaultTimes = getDefaultWorkTimes(selectedDateObj, employeeWochenstunden);
-
-    let workingHours: number;
-    let entryStartTime: string;
-    let entryEndTime: string;
-    let entryPauseMinutes: number;
-
-    if (absenceData.isFullDay) {
-      workingHours = absenceData.customHours ? parseFloat(absenceData.customHours) : automaticHours;
-      entryStartTime = defaultTimes?.startTime || "06:30";
-      entryEndTime = defaultTimes?.endTime || "15:30";
-      entryPauseMinutes = defaultTimes?.pauseMinutes || 60;
-    } else {
-      // Calculate from Von/Bis
+    // Je Tag: Stunden und Zeiten (ganzer Tag aus der Regelarbeitszeit, sonst Von/Bis)
+    const dayRows = daysToBook.map((key) => {
+      const dateObj = parseDateKey(key);
+      const automaticHours = getNormalWorkingHours(dateObj, employeeWochenstunden);
+      const defaultTimes = getDefaultWorkTimes(dateObj, employeeWochenstunden);
+      if (absenceData.isFullDay) {
+        return {
+          datum: key,
+          stunden: absenceData.customHours ? parseFloat(absenceData.customHours) : automaticHours,
+          start_time: defaultTimes?.startTime || "06:30",
+          end_time: defaultTimes?.endTime || "15:30",
+          pause_minutes: defaultTimes?.pauseMinutes || 60,
+        };
+      }
       const [sH, sM] = absenceData.absenceStartTime.split(':').map(Number);
       const [eH, eM] = absenceData.absenceEndTime.split(':').map(Number);
       const pause = parseInt(absenceData.absencePauseMinutes) || 0;
       const totalMinutes = (eH * 60 + eM) - (sH * 60 + sM) - pause;
-      workingHours = Math.max(0, totalMinutes / 60);
-      entryStartTime = absenceData.absenceStartTime;
-      entryEndTime = absenceData.absenceEndTime;
-      entryPauseMinutes = pause;
-    }
+      return {
+        datum: key,
+        stunden: Math.max(0, totalMinutes / 60),
+        start_time: absenceData.absenceStartTime,
+        end_time: absenceData.absenceEndTime,
+        pause_minutes: pause,
+      };
+    });
+    const totalAbsenceHours = dayRows.reduce((sum, r) => sum + r.stunden, 0);
+
+    const fmtDay = (key: string) => format(parseDateKey(key), "dd.MM.yyyy");
+    const rangeText = daysToBook.length === 1
+      ? `am ${fmtDay(daysToBook[0])}`
+      : `vom ${fmtDay(daysToBook[0])} bis ${fmtDay(daysToBook[daysToBook.length - 1])} (${daysToBook.length} Tage)`;
 
     // ZA: Check and deduct from time account
     if (absenceData.type === "za") {
@@ -518,14 +569,14 @@ const TimeTracking = () => {
         return;
       }
 
-      if (Number(timeAccount.balance_hours) < workingHours) {
-        toast({ variant: "destructive", title: "Nicht genügend ZA-Stunden", description: `Verfügbar: ${timeAccount.balance_hours}h, benötigt: ${workingHours}h` });
+      if (Number(timeAccount.balance_hours) < totalAbsenceHours) {
+        toast({ variant: "destructive", title: "Nicht genügend ZA-Stunden", description: `Verfügbar: ${timeAccount.balance_hours}h, benötigt: ${totalAbsenceHours}h` });
         setSubmittingAbsence(false);
         return;
       }
 
       const balanceBefore = Number(timeAccount.balance_hours);
-      const balanceAfter = balanceBefore - workingHours;
+      const balanceAfter = balanceBefore - totalAbsenceHours;
 
       const { error: updateErr } = await supabase
         .from("time_accounts")
@@ -542,31 +593,34 @@ const TimeTracking = () => {
         user_id: targetUserId,
         changed_by: user.id,
         change_type: "za_abzug",
-        hours: -workingHours,
+        hours: -totalAbsenceHours,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
-        reason: `Zeitausgleich am ${absenceData.date}`,
+        reason: daysToBook.length === 1 ? `Zeitausgleich am ${daysToBook[0]}` : `Zeitausgleich ${rangeText}`,
       });
     }
 
     const absenceLabel = absenceData.type === "urlaub" ? "Urlaub" : absenceData.type === "krankenstand" ? "Krankenstand" : absenceData.type === "weiterbildung" ? "Weiterbildung" : absenceData.type === "za" ? "Zeitausgleich" : "Feiertag";
 
-    const { error } = await supabase.from("time_entries").insert({
+    const { error } = await supabase.from("time_entries").insert(dayRows.map((r) => ({
       user_id: targetUserId,
-      datum: absenceData.date,
+      datum: r.datum,
       project_id: null,
       taetigkeit: absenceLabel,
-      stunden: workingHours,
-      start_time: entryStartTime,
-      end_time: entryEndTime,
-      pause_minutes: entryPauseMinutes,
+      stunden: r.stunden,
+      start_time: r.start_time,
+      end_time: r.end_time,
+      pause_minutes: r.pause_minutes,
       location_type: "baustelle",
       notizen: documentPath ? `Krankmeldung: ${documentPath}` : null,
       week_type: null,
-    });
+    })));
 
     if (!error) {
-      toast({ title: "Erfolg", description: `${absenceLabel} erfasst` });
+      toast({
+        title: "Erfolg",
+        description: `${absenceLabel} erfasst ${rangeText}` + (skippedBooked > 0 ? ` · ${skippedBooked} Tag(e) übersprungen, dort war schon etwas gebucht` : ""),
+      });
 
       // Notify admins for vacation and sick leave
       if (absenceData.type === "urlaub" || absenceData.type === "krankenstand") {
@@ -577,15 +631,16 @@ const TimeTracking = () => {
           .maybeSingle();
         const name = profileData ? `${profileData.vorname} ${profileData.nachname}`.trim() : "Ein Mitarbeiter";
         if (absenceData.type === "urlaub") {
-          notifyAdmins("leave_request", "Neuer Urlaubsantrag", `${name} hat am ${absenceData.date} Urlaub eingetragen.`);
+          notifyAdmins("leave_request", "Neuer Urlaubsantrag", `${name} hat ${rangeText} Urlaub eingetragen.`);
         } else {
-          notifyAdmins("krankmeldung", "Neue Krankmeldung", `${name} hat am ${absenceData.date} Krankenstand eingetragen.`);
+          notifyAdmins("krankmeldung", "Neue Krankmeldung", `${name} hat ${rangeText} Krankenstand eingetragen.`);
         }
       }
 
       setShowAbsenceDialog(false);
       setAbsenceData({
         date: new Date().toISOString().split('T')[0],
+        dateTo: "",
         type: "urlaub",
         document: null,
         customHours: "",
@@ -1298,15 +1353,61 @@ const TimeTracking = () => {
               <DialogDescription>Erfassen Sie Urlaub, Krankenstand, ZA, Weiterbildung oder Feiertag</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="absence-date">Datum</Label>
-                <Input
-                  id="absence-date"
-                  type="date"
-                  value={absenceData.date}
-                  onChange={(e) => setAbsenceData({ ...absenceData, date: e.target.value })}
-                />
+              <div className={absenceData.isFullDay ? "grid grid-cols-2 gap-3" : ""}>
+                <div>
+                  <Label htmlFor="absence-date">{absenceData.isFullDay ? "Von" : "Datum"}</Label>
+                  <Input
+                    id="absence-date"
+                    type="date"
+                    value={absenceData.date}
+                    onChange={(e) => setAbsenceData({
+                      ...absenceData,
+                      date: e.target.value,
+                      dateTo: absenceData.dateTo && absenceData.dateTo < e.target.value ? "" : absenceData.dateTo,
+                    })}
+                  />
+                </div>
+                {absenceData.isFullDay && (
+                  <div>
+                    <Label htmlFor="absence-date-to">Bis (optional)</Label>
+                    <Input
+                      id="absence-date-to"
+                      type="date"
+                      min={absenceData.date}
+                      value={absenceData.dateTo}
+                      onChange={(e) => setAbsenceData({ ...absenceData, dateTo: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
+              {(() => {
+                const from = absenceData.date;
+                const to = absenceData.isFullDay && absenceData.dateTo > from ? absenceData.dateTo : from;
+                if (!from) return null;
+                if (to === from) {
+                  const holiday = getHolidayName(from);
+                  return holiday ? (
+                    <p className="text-sm text-amber-700">🎉 {holiday} ist ein gesetzlicher Feiertag – dafür muss nichts eingetragen werden.</p>
+                  ) : null;
+                }
+                let working = 0, holidays = 0, days = 0;
+                const cur = parseDateKey(from);
+                const last = parseDateKey(to);
+                while (cur <= last && days <= 400) {
+                  days++;
+                  if (getNormalWorkingHours(cur, employeeWochenstunden) > 0) {
+                    if (isHoliday(cur)) holidays++; else working++;
+                  }
+                  cur.setDate(cur.getDate() + 1);
+                }
+                return (
+                  <p className="text-sm text-muted-foreground" data-testid="abwesenheit-vorschau">
+                    <strong>{working}</strong> {working === 1 ? "Arbeitstag" : "Arbeitstage"} werden eingetragen
+                    {holidays > 0 && <> · {holidays} {holidays === 1 ? "Feiertag" : "Feiertage"} übersprungen</>}
+                    {" "}· Wochenenden und freie Tage zählen nicht. Tage mit Einträgen bleiben unverändert.
+                  </p>
+                );
+              })()}
 
               <div>
                 <Label>Art</Label>
@@ -1492,7 +1593,7 @@ const TimeTracking = () => {
                   variant="outline"
                   onClick={() => {
                     setShowAbsenceDialog(false);
-                    setAbsenceData({ date: new Date().toISOString().split('T')[0], type: "urlaub", document: null, customHours: "", isFullDay: true, absenceStartTime: "06:30", absenceEndTime: "15:30", absencePauseMinutes: "60" });
+                    setAbsenceData({ date: new Date().toISOString().split('T')[0], dateTo: "", type: "urlaub", document: null, customHours: "", isFullDay: true, absenceStartTime: "06:30", absenceEndTime: "15:30", absencePauseMinutes: "60" });
                   }}
                   disabled={submittingAbsence}
                 >
