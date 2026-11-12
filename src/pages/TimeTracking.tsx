@@ -26,6 +26,7 @@ import {
   formatMinutesAsHours,
   getHolidayName,
   isHoliday,
+  getAbsenceDayHours,
   parseDateKey,
   toDateKey,
 } from "@/lib/workingHours";
@@ -462,7 +463,7 @@ const TimeTracking = () => {
       const cur = parseDateKey(fromKey);
       const last = parseDateKey(toKey);
       while (cur <= last && dayKeys.length <= 62) {
-        if (getNormalWorkingHours(cur, employeeWochenstunden) > 0 && !isHoliday(cur)) dayKeys.push(toDateKey(cur));
+        if (getAbsenceDayHours(cur, employeeWochenstunden) > 0 && !isHoliday(cur)) dayKeys.push(toDateKey(cur));
         cur.setDate(cur.getDate() + 1);
       }
       if (dayKeys.length > 62) {
@@ -525,7 +526,7 @@ const TimeTracking = () => {
     // Je Tag: Stunden und Zeiten (ganzer Tag aus der Regelarbeitszeit, sonst Von/Bis)
     const dayRows = daysToBook.map((key) => {
       const dateObj = parseDateKey(key);
-      const automaticHours = getNormalWorkingHours(dateObj, employeeWochenstunden);
+      const automaticHours = getAbsenceDayHours(dateObj, employeeWochenstunden);
       const defaultTimes = getDefaultWorkTimes(dateObj, employeeWochenstunden);
       if (absenceData.isFullDay) {
         return {
@@ -1395,7 +1396,7 @@ const TimeTracking = () => {
                 const last = parseDateKey(to);
                 while (cur <= last && days <= 400) {
                   days++;
-                  if (getNormalWorkingHours(cur, employeeWochenstunden) > 0) {
+                  if (getAbsenceDayHours(cur, employeeWochenstunden) > 0) {
                     if (isHoliday(cur)) holidays++; else working++;
                   }
                   cur.setDate(cur.getDate() + 1);
@@ -1490,13 +1491,13 @@ const TimeTracking = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Berechnete Stunden für diesen Tag:</span>
                     <Badge variant="secondary" className="text-lg font-bold px-3 py-1">
-                      {absenceData.customHours || getNormalWorkingHours(new Date(absenceData.date), employeeWochenstunden)} h
+                      {absenceData.customHours || getAbsenceDayHours(new Date(absenceData.date), employeeWochenstunden)} h
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {(() => {
                       const absenceDateObj = new Date(absenceData.date);
-                      const hours = getNormalWorkingHours(absenceDateObj, employeeWochenstunden);
+                      const hours = getAbsenceDayHours(absenceDateObj, employeeWochenstunden);
                       if (hours === 0) return "Kein Arbeitstag: 0 Stunden";
                       return `Arbeitstag: ${hours} Stunden`;
                     })()}
@@ -1509,7 +1510,7 @@ const TimeTracking = () => {
                         step="0.5"
                         min="0"
                         max="24"
-                        placeholder={String(getNormalWorkingHours(new Date(absenceData.date), employeeWochenstunden))}
+                        placeholder={String(getAbsenceDayHours(new Date(absenceData.date), employeeWochenstunden))}
                         value={absenceData.customHours}
                         onChange={(e) => setAbsenceData({ ...absenceData, customHours: e.target.value })}
                         className="w-24 text-center"

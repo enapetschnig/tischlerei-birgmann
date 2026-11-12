@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getDefaultWorkTimes, getNormalWorkingHours, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
+import { getAbsenceDayHours, getDefaultWorkTimes, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
 import { notifyUser } from "@/lib/notifications";
 
 type Profile = {
@@ -83,8 +83,8 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
     const days = eachDayOfInterval({ start: toLocalDate(from), end: toLocalDate(to) });
     if (days.length > MAX_DAYS) return { tooMany: true, working: [] as Date[], free: 0, holidays: 0 };
     // Wochenenden, freie Tage und gesetzliche Feiertage überspringen
-    const working = days.filter((d) => getNormalWorkingHours(d, ws) > 0 && !isHoliday(d));
-    const holidays = days.filter((d) => getNormalWorkingHours(d, ws) > 0 && isHoliday(d)).length;
+    const working = days.filter((d) => getAbsenceDayHours(d, ws) > 0 && !isHoliday(d));
+    const holidays = days.filter((d) => getAbsenceDayHours(d, ws) > 0 && isHoliday(d)).length;
     return { tooMany: false, working, free: days.length - working.length - holidays, holidays };
   }, [from, to, ws, settingsReady]);
 
@@ -102,9 +102,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
       toast({
         variant: "destructive",
         title: "Keine Arbeitstage im Zeitraum",
-        description: isFlexible
-          ? "Für flexible Modelle (20h/10h) gibt es kein Tagessoll — bitte über die Zeiterfassung mit Stundenangabe eintragen."
-          : "Im gewählten Zeitraum liegen nur Wochenenden, freie Tage oder Feiertage.",
+        description: "Im gewählten Zeitraum liegen nur Wochenenden, freie Tage oder Feiertage.",
       });
       return;
     }
@@ -146,7 +144,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
         datum: format(d, "yyyy-MM-dd"),
         project_id: null,
         taetigkeit: type,
-        stunden: getNormalWorkingHours(d, ws),
+        stunden: getAbsenceDayHours(d, ws),
         start_time: defaults?.startTime || "06:30",
         end_time: defaults?.endTime || "15:30",
         pause_minutes: defaults?.pauseMinutes ?? 60,
@@ -251,11 +249,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
             {preview.tooMany ? (
               <span className="text-destructive">Zeitraum ist länger als {MAX_DAYS} Tage.</span>
             ) : preview.working.length === 0 ? (
-              <span className="text-muted-foreground">
-                {isFlexible && userId
-                  ? "Flexibles Arbeitszeitmodell — kein Tagessoll, bitte über die Zeiterfassung eintragen."
-                  : "Keine Arbeitstage im Zeitraum."}
-              </span>
+              <span className="text-muted-foreground">Keine Arbeitstage im Zeitraum.</span>
             ) : (
               <>
                 <strong>{preview.working.length}</strong> {preview.working.length === 1 ? "Arbeitstag" : "Arbeitstage"}
@@ -269,7 +263,8 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
                   <span className="text-muted-foreground"> · {preview.holidays} {preview.holidays === 1 ? "Feiertag" : "Feiertage"} übersprungen</span>
                 )}
                 <span className="text-muted-foreground">
-                  {" "}· je {getNormalWorkingHours(preview.working[0], ws)} h
+                  {" "}· je {getAbsenceDayHours(preview.working[0], ws)} h
+                  {isFlexible && " (flexibles Modell: Wochenstunden / 5)"}
                 </span>
               </>
             )}

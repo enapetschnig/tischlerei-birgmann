@@ -394,6 +394,19 @@ export function getSaldoSollHours(date: Date, wochenstunden: number = 40): numbe
 }
 
 /**
+ * Stunden für einen ganztägigen Abwesenheitstag (Urlaub, Krankenstand, ZA …):
+ * Regelarbeitszeit des Modells; flexible Modelle (20h/10h) haben keinen Plan und
+ * bekommen Wochenstunden / 5 je Werktag (gleich wie das Tagessoll im Saldo).
+ * Feiertage prüft der Aufrufer (Einzeltag am Feiertag bleibt möglich).
+ */
+export function getAbsenceDayHours(date: Date, wochenstunden: number = 40): number {
+  const dow = date.getDay();
+  if (dow === 0 || dow === 6) return 0;
+  if (isFlexibleModel(wochenstunden)) return wochenstunden / 5;
+  return getNormalWorkingHours(date, wochenstunden);
+}
+
+/**
  * Stunden eines Tages, die für Plus/Minus zählen. An gesetzlichen Feiertagen
  * zählen Abwesenheits-Einträge (z.B. händisch eingetragener "Feiertag") nicht –
  * der Feiertag ist schon im Soll abgezogen. Arbeit am Feiertag zählt als Plus.

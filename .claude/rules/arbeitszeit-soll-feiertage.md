@@ -21,3 +21,6 @@ paths:
   weil die Excel „ohne ZA“ daraus die Regelzeiten schreibt.
 - Abwesenheit von–bis gibt es in der Zeiterfassung (alle Rollen) und im Admin-Bereich → Urlaubsverwaltung; beide
   überspringen Wochenenden, freie Tage, Feiertage und schon gebuchte Tage. ZA über Zeitraum: eine Abbuchung gesamt.
+- **12.11.2026 (Nachprüfung)**: Flexible Modelle (20/10 h) haben Regelarbeitszeit 0 – Abwesenheit (von–bis und
+  Einzeltag, Zeiterfassung + Urlaubsverwaltung) rechnet deshalb über `getAbsenceDayHours` (Wochenstunden / 5 je
+  Werktag, sonst Regelarbeitszeit). Für Abwesenheits-Tage nie direkt `getNormalWorkingHours` nehmen.
