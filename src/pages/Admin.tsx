@@ -97,21 +97,9 @@ interface Employee {
   wochenstunden: number | null;
 }
 
-const calculateExportHours = (entry: { start_time: string; end_time: string; stunden: number }): number => {
-  if (!entry.start_time || !entry.end_time) return entry.stunden;
-  const [startH, startM] = entry.start_time.split(":").map(Number);
-  const [endH, endM] = entry.end_time.split(":").map(Number);
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-  let totalMinutes = endMinutes - startMinutes;
-  if (totalMinutes <= 0) return entry.stunden;
-  if (startMinutes < 13 * 60 && endMinutes > 12 * 60) {
-    const overlapStart = Math.max(startMinutes, 12 * 60);
-    const overlapEnd = Math.min(endMinutes, 13 * 60);
-    totalMinutes -= (overlapEnd - overlapStart);
-  }
-  return totalMinutes / 60;
-};
+// Gebuchte Stunden verwenden (wie Meine Stunden, Stundenauswertung, Monatsabschluss):
+// Die Zeiterfassung schlägt die Pause dem ersten Eintrag zu – Beginn/Ende minus pauschal 12–13 Uhr wäre falsch.
+const calculateExportHours = (entry: { stunden: number }): number => Number(entry.stunden) || 0;
 
 export default function Admin() {
   const navigate = useNavigate();

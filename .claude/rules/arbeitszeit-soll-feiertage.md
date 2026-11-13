@@ -33,3 +33,5 @@ paths:
 - **Stunden immer aus `stunden` (gebucht), nie aus Beginn/Ende neu rechnen.** Die Zeiterfassung schlägt die ganze
   Tagespause dem ersten Eintrag zu; die Stundenauswertung zog bis 12.11.2026 pauschal 12–13 Uhr ab und lag an 63 Tagen
   (Juni–Nov.) daneben, netto 30,75 h zu wenig – ZA dort zu niedrig, Meine Stunden/Monatsabschluss waren richtig.
+- **13.11.2026 (Gegenprobe)**: Auch das Excel-Archiv beim Löschen eines Mitarbeiters (`Admin.tsx`,
+  `calculateExportHours`) rechnete noch Beginn/Ende minus 12–13 Uhr – jetzt ebenfalls gebuchte `stunden`.
