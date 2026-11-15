@@ -35,3 +35,7 @@ paths:
   (Juni–Nov.) daneben, netto 30,75 h zu wenig – ZA dort zu niedrig, Meine Stunden/Monatsabschluss waren richtig.
 - **13.11.2026 (Gegenprobe)**: Auch das Excel-Archiv beim Löschen eines Mitarbeiters (`Admin.tsx`,
   `calculateExportHours`) rechnete noch Beginn/Ende minus 12–13 Uhr – jetzt ebenfalls gebuchte `stunden`.
+- **15.11.2026 (Grundtest)**: Urlaubsverwaltung → Abwesenheit eintragen las die Arbeitszeitmodelle nur beim Öffnen des
+  Admin-Bereichs – Modell auf 38,5 umstellen und gleich Urlaub eintragen gab 5 × 8 h statt 38,5 h. Jetzt liest
+  `AdminAbsenceEntry` das Modell bei Auswahl und beim Eintragen frisch; nach „Regelarbeitszeiten speichern“ lädt
+  `Admin.tsx` den Cache sofort neu (vorher bis zum Neuladen Standardzeiten).

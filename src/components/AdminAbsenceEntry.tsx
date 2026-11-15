@@ -69,6 +69,19 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
     load();
   }, []);
 
+  // Arbeitszeitmodell des gewählten Mitarbeiters frisch lesen: Der Admin kann es im selben
+  // Admin-Bereich gerade erst geändert haben (z.B. 40 -> 38,5), die Liste oben ist dann veraltet.
+  const loadUserModel = async (id: string): Promise<number> => {
+    const { data } = await supabase.from("employees").select("wochenstunden").eq("user_id", id).maybeSingle();
+    const value = Number(data?.wochenstunden) || 40;
+    setWochenstunden((prev) => (prev[id] === value ? prev : { ...prev, [id]: value }));
+    return value;
+  };
+
+  useEffect(() => {
+    if (userId) loadUserModel(userId);
+  }, [userId]);
+
   // Bis darf nicht vor Von liegen
   useEffect(() => {
     if (from && to && to < from) setTo(from);
@@ -109,6 +122,21 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
 
     setSaving(true);
 
+    // Modell beim Eintragen nochmal frisch lesen (Vorschau könnte noch das alte zeigen)
+    const wsNow = await loadUserModel(userId);
+    const workingNow = eachDayOfInterval({ start: toLocalDate(from), end: toLocalDate(to) }).filter(
+      (d) => getAbsenceDayHours(d, wsNow) > 0 && !isHoliday(d)
+    );
+    if (workingNow.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Keine Arbeitstage im Zeitraum",
+        description: "Im gewählten Zeitraum liegen nur Wochenenden, freie Tage oder Feiertage.",
+      });
+      setSaving(false);
+      return;
+    }
+
     // Tage, an denen schon etwas gebucht ist, nicht überschreiben
     const { data: existing, error: existErr } = await supabase
       .from("time_entries")
@@ -124,8 +152,8 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
     }
 
     const booked = new Set((existing || []).map((e) => e.datum));
-    const toBook = preview.working.filter((d) => !booked.has(format(d, "yyyy-MM-dd")));
-    const skipped = preview.working.length - toBook.length;
+    const toBook = workingNow.filter((d) => !booked.has(format(d, "yyyy-MM-dd")));
+    const skipped = workingNow.length - toBook.length;
 
     if (toBook.length === 0) {
       toast({
@@ -138,13 +166,13 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
     }
 
     const rows = toBook.map((d) => {
-      const defaults = getDefaultWorkTimes(d, ws);
+      const defaults = getDefaultWorkTimes(d, wsNow);
       return {
         user_id: userId,
         datum: format(d, "yyyy-MM-dd"),
         project_id: null,
         taetigkeit: type,
-        stunden: getAbsenceDayHours(d, ws),
+        stunden: getAbsenceDayHours(d, wsNow),
         start_time: defaults?.startTime || "06:30",
         end_time: defaults?.endTime || "15:30",
         pause_minutes: defaults?.pauseMinutes ?? 60,

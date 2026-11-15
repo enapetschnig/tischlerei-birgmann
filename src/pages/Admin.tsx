@@ -195,6 +195,8 @@ export default function Admin() {
       if (error) throw error;
 
       invalidateWorkTimeSettings();
+      // Gleich neu laden, sonst rechnen Urlaubsverwaltung & Co. bis zum Neuladen mit den Standardzeiten
+      await loadWorkTimeSettings();
       toast({ title: "Gespeichert", description: "Regelarbeitszeiten wurden aktualisiert." });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Fehler", description: err.message || "Regelarbeitszeiten konnten nicht gespeichert werden." });

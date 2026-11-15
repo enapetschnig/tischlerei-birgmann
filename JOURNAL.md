@@ -30,3 +30,9 @@
 - Geprüft mit lokaler Vorschau (echte Oktober-Daten Steiner Christian, Desktop + 390 px Handy): 01.10. = 8.50 h, Monat 189.25 h, ZA +14.75 h.
 
 **Auswirkung:** Die alte Rechnung lag an 63 Tagen (Juni–Nov.) daneben, netto 30,75 h zu wenig (Okt.: David Hochradl +5,25 h, Fabian Falk +4,75 h, Hans Maislinger +2,00 h, Johann Grömer +2,00 h; Sep.: Fabian Falk +4,25 h; Nov.: Fabian Falk +2,50 h). Die ZA in der Stundenauswertung steigt für diese Monate entsprechend; Meine Stunden und Monatsabschluss bleiben, wie sie waren.
+
+## 2026-11-15 · Claude · Grundtests (Auftrag Christoph)
+- 4 neue Playwright-Dateien unter `tests/roboter/` (Anmelden/Rechte, Stunden erfassen, Regiebericht + PDF, Admin
+  Modell + Urlaub), Helfer in `tests/roboter/hilfen/`. Alle 6 Tests grün gegen die Testumgebung mit Echtdaten.
+- Dabei gefunden und behoben: Abwesenheit eintragen (Admin) nahm nach Modellwechsel im selben Admin-Bereich noch das
+  alte Modell (40 statt 38,5 h); Regelarbeitszeiten-Cache nach dem Speichern sofort neu laden.
