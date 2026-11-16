@@ -50,3 +50,9 @@ paths:
 - **16.11.2026 (Petra: „ich kann bei den Mitarbeiter keine Abwesenheit eintragen das fehlt bei mir“)**: Sie sucht es
   in der Mitarbeiterliste, nicht unten in der Urlaubsverwaltung. Jetzt Knopf „Abwesenheit“ je Mitarbeiter (Admin-Bereich →
   Registrierte Benutzer) → Dialog mit `AdminAbsenceEntry initialUserId=…`. Dieselbe Komponente, keine zweite Logik.
+- **16.11.2026 (Petra: „geht es das die Mitarbeiter auch Minus Stunden haben können? Das sie auch den ZA selbst
+  eintragen können?“)**: Geht beides schon, nichts geändert – Mitarbeiter: Zeiterfassung → Abwesenheit → ZA (ohne Plus,
+  auch von–bis), Meine Stunden zeigt dann Minus. Plus/Minus gilt **je Monat**, nichts wird in den nächsten Monat
+  übertragen. Monatsabschluss im Zeitkonto setzt auch ein Minus auf 0 („Barauszahlung“) – echt nur einmal benutzt
+  (06.03.2026 für Februar), alle Konten stehen auf 0. Minus-Übertrag in den Folgemonat wäre eine Lohnregel → nur auf
+  ausdrücklichen Wunsch bauen. Test: `tests/roboter/2026-11-16-mitarbeiter-za-minus.spec.ts`.
