@@ -47,3 +47,6 @@ paths:
   ziehen ihn vom Plus ab. Ersetzt „Urlaub, Krankenstand und ZA zählen wie gearbeitet“ vom 12.11. (galt nur mit Abbuchen).
   Händisches „Abzug“ im Zeitkonto für ZA-Tage nicht zusätzlich verwenden (sonst doppelt). Stundenauswertung: Admin-Stift
   jetzt auch an leeren Werktagen (öffnet die Zeiterfassung des Mitarbeiters für diesen Tag).
+- **16.11.2026 (Petra: „ich kann bei den Mitarbeiter keine Abwesenheit eintragen das fehlt bei mir“)**: Sie sucht es
+  in der Mitarbeiterliste, nicht unten in der Urlaubsverwaltung. Jetzt Knopf „Abwesenheit“ je Mitarbeiter (Admin-Bereich →
+  Registrierte Benutzer) → Dialog mit `AdminAbsenceEntry initialUserId=…`. Dieselbe Komponente, keine zweite Logik.

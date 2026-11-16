@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays, MessageSquarePlus } from "lucide-react";
+import { ArrowLeft, Shield, User as UserIcon, Send, Mail, Phone, MapPin, Shirt, FileText, Clock, Trash2, Settings, Save, Calendar, CalendarDays, CalendarPlus, MessageSquarePlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import * as XLSX from "xlsx-js-style";
@@ -135,6 +135,8 @@ export default function Admin() {
 
   // Zaehler: nach dem Eintragen einer Abwesenheit die Urlaubsliste neu laden
   const [leaveRefresh, setLeaveRefresh] = useState(0);
+  // Knopf „Abwesenheit“ direkt beim Mitarbeiter (Petra 16.11.2026)
+  const [absenceFor, setAbsenceFor] = useState<Profile | null>(null);
 
   // Regelarbeitszeiten (Mo-Fr) je Arbeitszeitmodell, admin-einstellbar
   const [workTimes, setWorkTimes] = useState<ModelWorkTimeSettings>({});
@@ -831,7 +833,7 @@ export default function Admin() {
                         </SelectContent>
                       </Select>
 
-                      <div className="grid grid-cols-3 sm:flex gap-2">
+                      <div className="grid grid-cols-2 sm:flex gap-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -842,6 +844,10 @@ export default function Admin() {
                         <Button size="sm" onClick={() => openEmployeeEditorForUser(profile.id, 'dokumente')}>
                           <FileText className="w-4 h-4 sm:mr-2" />
                           <span className="hidden sm:inline">Dokumente</span>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setAbsenceFor(profile)}>
+                          <CalendarPlus className="w-4 h-4 mr-2" />
+                          Abwesenheit
                         </Button>
                         <Button
                           variant="outline"
@@ -1458,6 +1464,26 @@ export default function Admin() {
               </ScrollArea>
             </TabsContent>
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Abwesenheit für einen Mitarbeiter eintragen (direkt aus der Mitarbeiterliste) */}
+      <Dialog open={!!absenceFor} onOpenChange={(open) => { if (!open) setAbsenceFor(null); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0 sm:p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Abwesenheit eintragen</DialogTitle>
+            <DialogDescription>
+              Abwesenheit für {absenceFor?.vorname} {absenceFor?.nachname} eintragen
+            </DialogDescription>
+          </DialogHeader>
+          {absenceFor && (
+            <AdminAbsenceEntry
+              key={absenceFor.id}
+              profiles={profiles.filter(p => p.is_active)}
+              initialUserId={absenceFor.id}
+              onSaved={() => { setLeaveRefresh(n => n + 1); setAbsenceFor(null); }}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

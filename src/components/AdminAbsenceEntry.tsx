@@ -36,6 +36,8 @@ interface AdminAbsenceEntryProps {
   profiles: Profile[];
   /** Wird nach erfolgreichem Eintragen aufgerufen (z.B. Kontingent neu laden). */
   onSaved?: () => void;
+  /** Mitarbeiter vorauswählen (Knopf „Abwesenheit“ direkt beim Mitarbeiter). */
+  initialUserId?: string;
 }
 
 /**
@@ -44,11 +46,11 @@ interface AdminAbsenceEntryProps {
  * bestehenden Einträgen werden übersprungen. Ein Eintrag je Arbeitstag, mit
  * denselben Feldern wie der Abwesenheits-Dialog in der Zeiterfassung.
  */
-export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEntryProps) {
+export default function AdminAbsenceEntry({ profiles, onSaved, initialUserId }: AdminAbsenceEntryProps) {
   const { toast } = useToast();
   const today = new Date().toISOString().split("T")[0];
 
-  const [userId, setUserId] = useState("");
+  const [userId, setUserId] = useState(initialUserId || "");
   const [type, setType] = useState<AbsenceType>("Urlaub");
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
