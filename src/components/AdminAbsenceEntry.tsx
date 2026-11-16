@@ -18,11 +18,12 @@ type Profile = {
   nachname: string;
 };
 
-type AbsenceType = "Urlaub" | "Krankenstand" | "Weiterbildung" | "Feiertag";
+type AbsenceType = "Urlaub" | "Krankenstand" | "Zeitausgleich" | "Weiterbildung" | "Feiertag";
 
 const ABSENCE_TYPES: { value: AbsenceType; label: string }[] = [
   { value: "Urlaub", label: "🏖️ Urlaub" },
   { value: "Krankenstand", label: "🏥 Krankenstand" },
+  { value: "Zeitausgleich", label: "⏰ Zeitausgleich (ZA)" },
   { value: "Weiterbildung", label: "📚 Weiterbildung" },
   { value: "Feiertag", label: "🎉 Feiertag" },
 ];
@@ -223,7 +224,7 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
           Abwesenheit eintragen
         </CardTitle>
         <CardDescription>
-          Urlaub, Krankenstand, Weiterbildung oder Feiertag für einen Mitarbeiter über einen Zeitraum
+          Urlaub, Krankenstand, ZA, Weiterbildung oder Feiertag für einen Mitarbeiter über einen Zeitraum
           eintragen. Wochenenden, freie Tage und gesetzliche Feiertage werden automatisch übersprungen.
         </CardDescription>
       </CardHeader>
@@ -299,9 +300,12 @@ export default function AdminAbsenceEntry({ profiles, onSaved }: AdminAbsenceEnt
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          Zeitausgleich (ZA) weiterhin über die Zeiterfassung eintragen — dort wird das Zeitkonto abgebucht.
-        </p>
+        {type === "Zeitausgleich" && (
+          <p className="text-xs text-muted-foreground">
+            ZA-Tage zählen nicht als gearbeitet – die Stunden werden im Plus/Minus (Meine Stunden,
+            Stundenauswertung, Monatsabschluss) abgezogen.
+          </p>
+        )}
 
         <Button onClick={handleSubmit} disabled={saving || !settingsReady} className="w-full sm:w-auto">
           {saving ? (

@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getHolidayName, getNormalWorkingHours, getWorkModelLabel, isAbsenceActivity, isHoliday, loadWorkTimeSettings } from "@/lib/workingHours";
+import { getHolidayName, getNormalWorkingHours, getWorkModelLabel, isAbsenceActivity, isHoliday, isZaActivity, loadWorkTimeSettings } from "@/lib/workingHours";
 
 /**
  * Die gebuchten Stunden stehen im Eintrag – genau so, wie der Mitarbeiter sie
@@ -215,12 +215,15 @@ export default function HoursReport() {
   const calculateDifference = (date: Date, totalHours: number): number => {
     // Gesetzlicher Feiertag: kein Soll. Händisch eingetragene Abwesenheit (z.B. "Feiertag")
     // bleibt neutral, Arbeit am Feiertag zählt voll als Plus.
+    const dayEntries = timeEntries.filter((e) => isSameDay(parseISO(e.datum), date));
     const normalHours = isHoliday(date)
-      ? timeEntries
-          .filter((e) => isSameDay(parseISO(e.datum), date) && isAbsenceActivity(e.taetigkeit))
-          .reduce((sum, e) => sum + entryHours(e), 0)
+      ? dayEntries.filter((e) => isAbsenceActivity(e.taetigkeit)).reduce((sum, e) => sum + entryHours(e), 0)
       : getNormalWorkingHours(date, employeeWochenstunden);
-    return totalHours - normalHours;
+    // Zeitausgleich steht mit Stunden im Eintrag, wird aber vom Plus abgezogen (gleich wie Meine Stunden)
+    const zaHours = isHoliday(date)
+      ? 0
+      : dayEntries.filter((e) => isZaActivity(e.taetigkeit)).reduce((sum, e) => sum + entryHours(e), 0);
+    return totalHours - zaHours - normalHours;
   };
 
   const calculateLunchBreak = (entry: TimeEntry) => {
@@ -313,7 +316,7 @@ export default function HoursReport() {
           const lunchBreak = calculateLunchBreak(entry);
           const project = projects[entry.project_id];
           const ortText = entry.location_type === "baustelle" ? "Baustelle" : "Werkstatt";
-          const isAbsence = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag"].includes(entry.taetigkeit);
+          const isAbsence = isAbsenceActivity(entry.taetigkeit);
           const isDisturbance = entry.disturbance_id != null || entry.taetigkeit?.startsWith("Störungseinsatz");
           let projektName = "";
           if (isAbsence) { projektName = entry.taetigkeit; }
@@ -542,13 +545,13 @@ export default function HoursReport() {
                                     <span>{day.dayNumber}</span>
                                     <span className="text-xs text-muted-foreground">{format(day.date, "EEE", { locale: de })}</span>
                                   </div>
-                                  {isAdmin && tag.sorted.length > 0 && (
+                                  {isAdmin && (tag.sorted.length > 0 || !day.isWeekend) && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="-mt-1 h-6 w-6 shrink-0"
-                                      title="Tag bearbeiten"
-                                      onClick={() => navigate(`/time-tracking?user_id=${selectedUserId}&date=${tag.sorted[0].datum}&return_month=${month}&return_year=${year}&return_employee=${selectedUserId}`)}
+                                      className={cn("-mt-1 h-6 w-6 shrink-0", tag.sorted.length === 0 && "opacity-50")}
+                                      title={tag.sorted.length > 0 ? "Tag bearbeiten" : "Tag eintragen"}
+                                      onClick={() => navigate(`/time-tracking?user_id=${selectedUserId}&date=${format(day.date, "yyyy-MM-dd")}&return_month=${month}&return_year=${year}&return_employee=${selectedUserId}`)}
                                     >
                                       <Pencil className="h-3.5 w-3.5" />
                                     </Button>

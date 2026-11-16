@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { useAvailableEmployees, Employee } from "@/hooks/useAvailableEmployees";
+import { isAbsenceActivity } from "@/lib/workingHours";
 
 type TimeConflict = {
   employeeId: string;
@@ -92,7 +93,7 @@ export const MultiEmployeeSelect = ({
           
           for (const entry of existingEntries) {
             // Check for vacation/sick day
-            if (["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag"].includes(entry.taetigkeit || "")) {
+            if (isAbsenceActivity(entry.taetigkeit)) {
               foundConflicts.push({
                 employeeId,
                 employeeName: employee ? `${employee.vorname} ${employee.nachname}` : "Unbekannt",

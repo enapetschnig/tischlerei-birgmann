@@ -37,6 +37,7 @@ import {
   type DayWorkTime,
   type ModelWorkTimeSettings,
   type WorkTimeSettings,
+  isAbsenceActivity,
 } from "@/lib/workingHours";
 
 const WEEKDAY_LABELS: Record<number, string> = {
@@ -1587,7 +1588,7 @@ export default function Admin() {
                         const hours = calculateExportHours(e);
                         totalHours += hours;
                         const project = e.project_id ? projectMap[e.project_id] : null;
-                        const isAbsence = ["Urlaub", "Krankenstand", "Weiterbildung", "Feiertag"].includes(e.taetigkeit);
+                        const isAbsence = isAbsenceActivity(e.taetigkeit);
                         rows.push([
                           e.datum,
                           e.start_time?.substring(0, 5) || "",

@@ -338,7 +338,7 @@ const MyHours = () => {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {running && <>Soll bis heute: {fmtH(balance.sollToDate)} Std., Ist bis heute: {fmtH(balance.istToDate)} Std. </>}
-                    Urlaub, Krankenstand und ZA zählen wie gearbeitet.
+                    Urlaub und Krankenstand zählen wie gearbeitet, ZA wird vom Plus abgezogen.
                     {workdayHolidays.length > 0 && (
                       <> Feiertage (schon vom Soll abgezogen): {workdayHolidays.map((h) => `${h.datum.substring(8, 10)}.${h.datum.substring(5, 7)}. ${h.name}`).join(", ")}.</>
                     )}

@@ -374,6 +374,15 @@ export function isAbsenceActivity(taetigkeit: string | null | undefined): boolea
   return (ABSENCE_ACTIVITIES as readonly string[]).includes(taetigkeit || "");
 }
 
+/**
+ * Zeitausgleich (ZA) = freier Tag, der mit Überstunden bezahlt wird. Die Stunden stehen
+ * im Eintrag (für Lohn/Excel), zählen im Plus/Minus aber nicht als Ist – der ZA-Tag zieht
+ * so die Stunden vom Plus ab (16.11.2026, Petra: ZA ließ sich bei leerem Zeitkonto nicht eintragen).
+ */
+export function isZaActivity(taetigkeit: string | null | undefined): boolean {
+  return (taetigkeit || "").trim() === "Zeitausgleich";
+}
+
 /** "2026-11-12" -> lokales Datum (ohne UTC-Verschiebung). */
 export function parseDateKey(key: string): Date {
   const [y, m, d] = key.substring(0, 10).split("-").map(Number);
@@ -410,10 +419,12 @@ export function getAbsenceDayHours(date: Date, wochenstunden: number = 40): numb
  * Stunden eines Tages, die für Plus/Minus zählen. An gesetzlichen Feiertagen
  * zählen Abwesenheits-Einträge (z.B. händisch eingetragener "Feiertag") nicht –
  * der Feiertag ist schon im Soll abgezogen. Arbeit am Feiertag zählt als Plus.
+ * Zeitausgleich zählt nie als Ist (wird vom Plus abgezogen).
  */
 export function getSaldoIstHours(date: Date, entries: { stunden: number | null; taetigkeit: string | null }[]): number {
   const holiday = isHoliday(date);
   return entries.reduce((sum, e) => {
+    if (isZaActivity(e.taetigkeit)) return sum;
     if (holiday && isAbsenceActivity(e.taetigkeit)) return sum;
     return sum + (Number(e.stunden) || 0);
   }, 0);

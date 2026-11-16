@@ -36,3 +36,12 @@
   Modell + Urlaub), Helfer in `tests/roboter/hilfen/`. Alle 6 Tests grün gegen die Testumgebung mit Echtdaten.
 - Dabei gefunden und behoben: Abwesenheit eintragen (Admin) nahm nach Modellwechsel im selben Admin-Bereich noch das
   alte Modell (40 statt 38,5 h); Regelarbeitszeiten-Cache nach dem Speichern sofort neu laden.
+
+## 16.11.2026 – ZA ließ sich nicht eintragen (Fabian Falk, 02.10./16.10.)
+- Befund (nur gelesen): alle 18 Zeitkonten 0 Std., nur 5 Test-Buchungen vom 06.03.; Fabian (40 h) hat an 02.10./16.10. keine
+  Einträge. Zeiterfassung → Abwesenheit → ZA brach mit „Nicht genügend ZA-Stunden (Verfügbar: 0h)“ ab; Urlaubsverwaltung
+  bot ZA gar nicht an. Noch nie ein ZA-Eintrag in der Datenbank.
+- Fix: ZA ohne Zeitkonto-Abbuchung, ZA zählt im Plus/Minus nicht als Ist (siehe rules/arbeitszeit-soll-feiertage.md),
+  ZA auch in Urlaubsverwaltung → Abwesenheit eintragen, Stift in der Stundenauswertung auch an leeren Werktagen,
+  Abwesenheits-Dialog nimmt den gewählten Tag. Test `tests/roboter/2026-11-16-za-ohne-zeitkonto.spec.ts`, alle 7 grün.
+- Keine Daten geändert (ZA für Fabian trägt Petra selbst ein).

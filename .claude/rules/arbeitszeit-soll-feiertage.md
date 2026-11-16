@@ -39,3 +39,11 @@ paths:
   Admin-Bereichs – Modell auf 38,5 umstellen und gleich Urlaub eintragen gab 5 × 8 h statt 38,5 h. Jetzt liest
   `AdminAbsenceEntry` das Modell bei Auswahl und beim Eintragen frisch; nach „Regelarbeitszeiten speichern“ lädt
   `Admin.tsx` den Cache sofort neu (vorher bis zum Neuladen Standardzeiten).
+- **16.11.2026 (Petra: „Bei Falk Fabian geht es nicht das man am 02.10 u. 16.10 ZA einträgt“)**: ZA buchte bisher vom
+  Zeitkonto ab und brach bei zu wenig Guthaben ab – das Konto steht aber nach jedem Monatsabschluss (Barauszahlung) auf 0,
+  bei allen Mitarbeitern, also ging ZA nie. Neu: ZA geht immer (Zeiterfassung und Urlaubsverwaltung → Abwesenheit
+  eintragen), kein Abbuchen mehr; der ZA-Eintrag behält seine Stunden, zählt im Plus/Minus aber nicht als Ist
+  (`isZaActivity` in `getSaldoIstHours` und `calculateDifference`) → Meine Stunden, Stundenauswertung und Monatsabschluss
+  ziehen ihn vom Plus ab. Ersetzt „Urlaub, Krankenstand und ZA zählen wie gearbeitet“ vom 12.11. (galt nur mit Abbuchen).
+  Händisches „Abzug“ im Zeitkonto für ZA-Tage nicht zusätzlich verwenden (sonst doppelt). Stundenauswertung: Admin-Stift
+  jetzt auch an leeren Werktagen (öffnet die Zeiterfassung des Mitarbeiters für diesen Tag).

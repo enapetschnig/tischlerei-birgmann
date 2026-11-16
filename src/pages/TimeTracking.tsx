@@ -549,57 +549,15 @@ const TimeTracking = () => {
         pause_minutes: pause,
       };
     });
-    const totalAbsenceHours = dayRows.reduce((sum, r) => sum + r.stunden, 0);
 
     const fmtDay = (key: string) => format(parseDateKey(key), "dd.MM.yyyy");
     const rangeText = daysToBook.length === 1
       ? `am ${fmtDay(daysToBook[0])}`
       : `vom ${fmtDay(daysToBook[0])} bis ${fmtDay(daysToBook[daysToBook.length - 1])} (${daysToBook.length} Tage)`;
 
-    // ZA: Check and deduct from time account
-    if (absenceData.type === "za") {
-      const { data: timeAccount, error: taError } = await supabase
-        .from("time_accounts")
-        .select("id, balance_hours")
-        .eq("user_id", targetUserId)
-        .maybeSingle();
-
-      if (taError || !timeAccount) {
-        toast({ variant: "destructive", title: "Fehler", description: "Kein Zeitkonto gefunden. Bitte wenden Sie sich an den Administrator." });
-        setSubmittingAbsence(false);
-        return;
-      }
-
-      if (Number(timeAccount.balance_hours) < totalAbsenceHours) {
-        toast({ variant: "destructive", title: "Nicht genügend ZA-Stunden", description: `Verfügbar: ${timeAccount.balance_hours}h, benötigt: ${totalAbsenceHours}h` });
-        setSubmittingAbsence(false);
-        return;
-      }
-
-      const balanceBefore = Number(timeAccount.balance_hours);
-      const balanceAfter = balanceBefore - totalAbsenceHours;
-
-      const { error: updateErr } = await supabase
-        .from("time_accounts")
-        .update({ balance_hours: balanceAfter, updated_at: new Date().toISOString() })
-        .eq("id", timeAccount.id);
-
-      if (updateErr) {
-        toast({ variant: "destructive", title: "Fehler", description: "ZA-Stunden konnten nicht abgebucht werden" });
-        setSubmittingAbsence(false);
-        return;
-      }
-
-      await supabase.from("time_account_transactions").insert({
-        user_id: targetUserId,
-        changed_by: user.id,
-        change_type: "za_abzug",
-        hours: -totalAbsenceHours,
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
-        reason: daysToBook.length === 1 ? `Zeitausgleich am ${daysToBook[0]}` : `Zeitausgleich ${rangeText}`,
-      });
-    }
+    // ZA: kein Abbuchen vom Zeitkonto mehr. Der Zeitausgleich-Eintrag zählt im Plus/Minus
+    // (Meine Stunden, Stundenauswertung, Monatsabschluss) nicht als Ist und zieht die Stunden
+    // so vom Plus ab. Vorher blockte das Zeitkonto (nach jedem Monatsabschluss 0) jeden ZA.
 
     const absenceLabel = absenceData.type === "urlaub" ? "Urlaub" : absenceData.type === "krankenstand" ? "Krankenstand" : absenceData.type === "weiterbildung" ? "Weiterbildung" : absenceData.type === "za" ? "Zeitausgleich" : "Feiertag";
 
@@ -877,7 +835,7 @@ const TimeTracking = () => {
               </div>
               <Button
                 variant="outline"
-                onClick={() => setShowAbsenceDialog(true)}
+                onClick={() => { setAbsenceData((d) => ({ ...d, date: selectedDate })); setShowAbsenceDialog(true); }}
                 className="gap-2"
               >
                 <Calendar className="h-4 w-4" />
